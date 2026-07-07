@@ -65,7 +65,35 @@ public class GameEngine : BackgroundService
     public void BeginGame(Lobby lobby, List<Func<Task>> outbound)
     {
         lobby.StartedAtUtc = DateTime.UtcNow;
+        LoadStyleSummaries(lobby);
         StartPromptingRound(lobby, roundNumber: 1, outbound);
+    }
+
+    // Load each human's StyleProfiles.SummaryJson (if any) into the lobby as
+    // "NAME: {json}" lines for the AI system prompt. Omitted entirely if none exist.
+    // Best-effort: a DB failure just means the AI plays without style notes.
+    private void LoadStyleSummaries(Lobby lobby)
+    {
+        lobby.StyleSummaries.Clear();
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<GameContext>();
+
+            var userIds = lobby.Players.Select(p => p.UserId).ToList();
+            var profiles = db.StyleProfiles
+                .Where(sp => userIds.Contains(sp.UserId) && sp.SummaryJson != null)
+                .ToDictionary(sp => sp.UserId, sp => sp.SummaryJson!);
+
+            foreach (var p in lobby.Players)
+                if (profiles.TryGetValue(p.UserId, out var json))
+                    lobby.StyleSummaries.Add($"{p.DisplayName}: {json}");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Loading style summaries failed for lobby {Code}", lobby.Code);
+            lobby.StyleSummaries.Clear();
+        }
     }
 
     // ---- the tick: dispatch on current phase, act only when its deadline passed ----
@@ -123,6 +151,7 @@ public class GameEngine : BackgroundService
         lobby.RoundNumber = roundNumber;
         lobby.State = GameState.Prompting;
         lobby.CurrentPrompt = PromptPool.Random();
+        lobby.RoundPrompts[roundNumber] = lobby.CurrentPrompt;
         lobby.Answers.Clear();
         lobby.AiAnswerRequested = false;
         lobby.AccuserName = null;
@@ -154,13 +183,28 @@ public class GameEngine : BackgroundService
         var round = lobby.RoundNumber;
         var prompt = lobby.CurrentPrompt;
 
+        // Group stats over every real answer so far (post-processing + timing median).
+        var priorAnswers = lobby.Transcript.Select(r => r.Text).ToList();
+        var groupStats = AnswerPostProcessor.ComputeStats(priorAnswers, StyleTypoRates(lobby));
+
+        // The AI's own prior answers, for personality continuity.
+        var ownAnswers = lobby.Transcript
+            .Where(r => r.IsAi)
+            .OrderBy(r => r.Round)
+            .Select(r => r.Text)
+            .ToList();
+
         var ctx = new AiTurnContext(
             CurrentPrompt: prompt,
             RoundNumber: round,
             AiDisplayName: aiName,
             HumanDisplayNames: humans,
             History: history,
-            StyleSummaries: Array.Empty<string>(),
+            PreviousOwnAnswers: ownAnswers,
+            StyleSummaries: BuildStyleSummaries(lobby),
+            GroupStats: groupStats,
+            TimingState: lobby.TimingState,
+            FallbackState: lobby.FallbackState,
             TimeRemaining: remaining);
 
         _ = Task.Run(async () =>
@@ -458,9 +502,33 @@ public class GameEngine : BackgroundService
             .OrderBy(g => g.Key)
             .Select(g => new RoundHistory(
                 g.Key,
-                lobby.CurrentPrompt, // best-effort; per-round prompt text isn't stored separately in v1
+                lobby.RoundPrompts.TryGetValue(g.Key, out var p) ? p : lobby.CurrentPrompt,
                 g.Select(r => new HistoryAnswer(r.DisplayName, r.Text)).ToList()))
             .ToList();
+    }
+
+    // The cached per-human style-summary lines loaded at game start.
+    private static IReadOnlyList<string> BuildStyleSummaries(Lobby lobby) => lobby.StyleSummaries;
+
+    // Pull each style profile's typoRate out of its JSON for the group typo mean.
+    // Cheap parse; a missing/unparseable field just contributes nothing.
+    private static List<double> StyleTypoRates(Lobby lobby)
+    {
+        var rates = new List<double>();
+        foreach (var line in lobby.StyleSummaries)
+        {
+            var idx = line.IndexOf('{');
+            if (idx < 0) continue;
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(line[idx..]);
+                if (doc.RootElement.TryGetProperty("typoRate", out var tr)
+                    && tr.TryGetDouble(out var v))
+                    rates.Add(v);
+            }
+            catch { /* ignore malformed profile json */ }
+        }
+        return rates;
     }
 
     private static void Shuffle<T>(IList<T> list)
@@ -480,7 +548,9 @@ public class GameEngine : BackgroundService
         string? WinnerUserId,
         DateTime StartedAt,
         List<(string UserId, int Tokens, bool Eliminated, int VetoerCount)> Players,
-        List<(int Round, string? AuthorUserId, string DisplayName, string Text, DateTime SentAt)> Messages);
+        List<(int Round, string? AuthorUserId, string DisplayName, string Text, DateTime SentAt)> Messages,
+        List<(int Round, string Prompt)> RoundPrompts,
+        int FallbackCount);
 
     private static PersistSnapshot SnapshotForPersist(Lobby lobby) => new(
         JoinCode: lobby.Code,
@@ -492,7 +562,12 @@ public class GameEngine : BackgroundService
             .ToList(),
         Messages: lobby.Transcript
             .Select(r => (r.Round, r.AuthorUserId, r.DisplayName, r.Text, r.SentAtUtc))
-            .ToList());
+            .ToList(),
+        RoundPrompts: lobby.RoundPrompts
+            .OrderBy(kv => kv.Key)
+            .Select(kv => (kv.Key, kv.Value))
+            .ToList(),
+        FallbackCount: lobby.FallbackState.Count);
 
     // Write Games / GamePlayers / GameMessages at game end. Real author ids land
     // in the DB (null == AI); they never went over the wire live.
@@ -536,8 +611,22 @@ public class GameEngine : BackgroundService
                 });
             }
 
+            foreach (var rp in snap.RoundPrompts)
+            {
+                game.RoundPrompts.Add(new GameRoundPrompt
+                {
+                    Round = rp.Round,
+                    Prompt = rp.Prompt
+                });
+            }
+
             db.Games.Add(game);
             await db.SaveChangesAsync();
+
+            // How often Gemini flaked this game (rate limits / errors → canned answers).
+            if (snap.FallbackCount > 0)
+                _logger.LogInformation(
+                    "Game {Code} used {Count} fallback answer(s)", snap.JoinCode, snap.FallbackCount);
         }
         catch (Exception ex)
         {

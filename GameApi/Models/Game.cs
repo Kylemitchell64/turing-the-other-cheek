@@ -12,4 +12,5 @@ public class Game
 
     public List<GamePlayer> Players { get; set; } = new();
     public List<GameMessage> Messages { get; set; } = new();
+    public List<GameRoundPrompt> RoundPrompts { get; set; } = new();
 }

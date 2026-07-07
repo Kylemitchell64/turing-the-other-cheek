@@ -1,3 +1,4 @@
+using GameApi.GameLoop;
 using GameApi.Models;
 
 namespace GameApi.Lobbies;
@@ -33,6 +34,11 @@ public class Lobby
     public int RoundNumber { get; set; }
     public string CurrentPrompt { get; set; } = "";
 
+    // Each round's prompt text, keyed by round number. Kept so the AI history and the
+    // end transcript render the correct "R1 PROMPT: ..." per round (not just the
+    // latest prompt), and so it can be persisted to the game record.
+    public Dictionary<int, string> RoundPrompts { get; } = new();
+
     // When the current phase's server-side deadline expires (UTC). The engine ticks
     // and compares against this — the client clock is never trusted.
     public DateTime PhaseDeadlineUtc { get; set; }
@@ -46,6 +52,16 @@ public class Lobby
     // Set true once we've kicked off the AI's answer task for this round so we don't
     // double-fire it on subsequent ticks.
     public bool AiAnswerRequested { get; set; }
+
+    // Per-lobby AI state that persists across rounds: the timing anti-pattern memory
+    // (last 3 delays) and the fallback used-set + count. Reset each new game.
+    public AnswerTiming.State TimingState { get; private set; } = new();
+    public FallbackState FallbackState { get; private set; } = new();
+
+    // Rendered per-human style-summary lines ("NAME: {json}"), loaded once from the
+    // StyleProfiles table at game start. Empty when no profiles exist. Injected into
+    // the AI system prompt (AI-DESIGN section 1).
+    public List<string> StyleSummaries { get; } = new();
 
     // ---- accusation / veto / cooldown state ----
 
@@ -86,8 +102,12 @@ public class Lobby
         CurrentPrompt = "";
         PhaseDeadlineUtc = default;
         Answers.Clear();
+        RoundPrompts.Clear();
         Transcript.Clear();
         AiAnswerRequested = false;
+        TimingState = new();
+        FallbackState = new();
+        StyleSummaries.Clear();
         AccuserName = null;
         AccusedName = null;
         VetoEligible.Clear();

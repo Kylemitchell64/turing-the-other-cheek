@@ -25,6 +25,9 @@ public class TestAppFactory : WebApplicationFactory<Program>
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Jwt:Key"] = "test-only-signing-key-that-is-at-least-64-characters-long-000000000",
+                // Tests always use the mock brain — never hit the real Gemini API, even
+                // if a GEMINI_API_KEY happens to be set in this environment.
+                ["Ai:Brain"] = "Mock",
                 // TestServer sees every request as one IP; raise the limit so the
                 // suite's many registrations don't trip the 429.
                 ["RateLimit:PermitsPerMinute"] = "1000",
