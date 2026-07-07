@@ -1,5 +1,6 @@
 import { createContext, useContext, useRef, useState, useCallback, useEffect } from "react";
 import { buildGameConnection } from "./gameConnection";
+import { measureClockSkew } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 
 const LobbyContext = createContext(null);
@@ -28,6 +29,20 @@ export function LobbyProvider({ children }) {
   const [ended, setEnded] = useState(null); // { winType, winnerName, aiRealIdentityName, fullTranscript[] }
   const [events, setEvents] = useState([]); // a simple scrolling event log for manual testing
 
+  // Live per-player token counts, keyed by display name. Seeded from the roster at
+  // GameStarted (everyone starts with 3), then adjusted as tokens are spent: a veto
+  // costs the vetoer one, elimination means zero. The server never streams a live
+  // token map, so we mirror it from the events that imply a change.
+  const [tokens, setTokens] = useState({});
+
+  // Estimated client clock skew in ms (client - server). Countdowns subtract this so
+  // they run off the server's UTC deadlines regardless of a wrong phone clock.
+  const [clockSkew, setClockSkew] = useState(0);
+
+  // Chat-style scrollback: each revealed round appended so the Game screen reads like
+  // a transcript instead of only showing the latest round.
+  const [history, setHistory] = useState([]); // [{ round, prompt, answers[] }]
+
   const log = useCallback((msg) => {
     setEvents((prev) => [...prev.slice(-40), { t: Date.now(), msg }]);
   }, []);
@@ -50,6 +65,9 @@ export function LobbyProvider({ children }) {
         setReveal(null);
         setEliminated([]);
         setEvents([]);
+        setHistory([]);
+        // Seed live token counts from the roster (each entry carries its start count).
+        setTokens(Object.fromEntries(r.map((p) => [p.displayName, p.tokensRemaining])));
         log("game started");
       });
 
@@ -67,6 +85,10 @@ export function LobbyProvider({ children }) {
       conn.on("AnswersRevealed", (payload) => {
         setReveal(payload);
         setPhase("revealing");
+        // Append to the scrollback (guard against a duplicate if the event repeats).
+        setHistory((prev) =>
+          prev.some((h) => h.round === payload.round) ? prev : [...prev, payload]
+        );
         log(`round ${payload.round} answers revealed`);
       });
 
@@ -90,6 +112,8 @@ export function LobbyProvider({ children }) {
       conn.on("FakeOutUsed", (vetoer) => {
         setFakeOut({ vetoer, at: Date.now() });
         setVetoWindow(null);
+        // A veto spends one of the vetoer's tokens.
+        setTokens((prev) => ({ ...prev, [vetoer]: Math.max(0, (prev[vetoer] ?? 0) - 1) }));
         log(`${vetoer} used a FAKE-OUT`);
         // Clear the shake after the animation (~600ms).
         setTimeout(() => setFakeOut(null), 700);
@@ -98,11 +122,16 @@ export function LobbyProvider({ children }) {
       conn.on("AccusationResolved", (correct, accuser, accused) => {
         setResolved({ correct, accuser, accused });
         setVetoWindow(null);
+        // A wrong, unvetoed accusation burns one of the accuser's tokens.
+        if (!correct) {
+          setTokens((prev) => ({ ...prev, [accuser]: Math.max(0, (prev[accuser] ?? 0) - 1) }));
+        }
         log(`resolved: ${accuser} → ${accused} was ${correct ? "CORRECT" : "wrong"}`);
       });
 
       conn.on("PlayerEliminated", (name) => {
         setEliminated((prev) => (prev.includes(name) ? prev : [...prev, name]));
+        setTokens((prev) => ({ ...prev, [name]: 0 }));
         log(`${name} is out of tokens (answer-only)`);
       });
 
@@ -120,6 +149,8 @@ export function LobbyProvider({ children }) {
       setStatus("connecting");
       await conn.start();
       setStatus("connected");
+      // Estimate clock skew once we're online so countdowns track server deadlines.
+      measureClockSkew().then(setClockSkew).catch(() => {});
     }
     return conn;
   }, [log]);
@@ -174,6 +205,8 @@ export function LobbyProvider({ children }) {
     setEliminated([]);
     setEnded(null);
     setEvents([]);
+    setHistory([]);
+    setTokens({});
     if (connRef.current) {
       try { await connRef.current.stop(); } catch { /* ignore */ }
       connRef.current = null;
@@ -185,6 +218,7 @@ export function LobbyProvider({ children }) {
     status, lobby, roster, error, setError,
     round, phase, reveal, accusation, accusationMade,
     vetoWindow, fakeOut, resolved, eliminated, ended, events,
+    tokens, clockSkew, history,
     createLobby, joinLobby, startGame, leaveLobby,
     submitAnswer, makeAccusation, useFakeOut,
   };

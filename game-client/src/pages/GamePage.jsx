@@ -2,38 +2,36 @@ import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { useLobby } from "../game/LobbyContext";
+import CountdownRing from "../components/CountdownRing";
+import AccuseButton from "../components/AccuseButton";
 
-// A live UTC-deadline countdown. The server owns the clock; we just show the gap.
-function useCountdown(deadlineUtc) {
-  const [secs, setSecs] = useState(0);
-  useEffect(() => {
-    if (!deadlineUtc) { setSecs(0); return; }
-    const end = new Date(deadlineUtc).getTime();
-    const tick = () => setSecs(Math.max(0, Math.ceil((end - Date.now()) / 1000)));
-    tick();
-    const id = setInterval(tick, 250);
-    return () => clearInterval(id);
-  }, [deadlineUtc]);
-  return secs;
+// Token pips for a player badge. Shows current tokens out of 3.
+function Tokens({ n }) {
+  return (
+    <span className="tokens" title={`${n} fake-out token${n === 1 ? "" : "s"}`}>
+      {[0, 1, 2].map((i) => (
+        <span key={i} className={i < n ? "pip on" : "pip"} />
+      ))}
+    </span>
+  );
 }
 
-// Phase 3 game screen. Functional, not polished (polish is phase 5): shows the
-// prompt + countdown, an answer box, revealed answers, accuse buttons, the veto
-// prompt, the fake-out shake overlay, an end screen with the AI reveal, and a basic
-// event log so the whole loop is manually testable.
 export default function GamePage() {
   const { user } = useAuth();
   const {
     roster, phase, round, reveal, accusation, accusationMade,
-    vetoWindow, fakeOut, resolved, eliminated, ended, events,
-    leaveLobby, submitAnswer, makeAccusation, useFakeOut, startGame,
+    vetoWindow, fakeOut, resolved, eliminated, ended, history,
+    tokens, clockSkew,
+    leaveLobby, submitAnswer, makeAccusation, useFakeOut: sendFakeOut, startGame,
   } = useLobby();
   const navigate = useNavigate();
 
   const [answer, setAnswer] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [vetoed, setVetoed] = useState(false);
   const lastRoundRef = useRef(0);
+  const scrollRef = useRef(null);
 
   const myName = user?.displayName || user?.unique_name;
 
@@ -41,19 +39,21 @@ export default function GamePage() {
     if (!roster) navigate("/", { replace: true });
   }, [roster, navigate]);
 
-  // Reset the answer box each new round.
+  // Reset per-round answer/veto state on a new round.
   useEffect(() => {
     if (round && round.number !== lastRoundRef.current) {
       lastRoundRef.current = round.number;
       setAnswer("");
       setSubmitted(false);
+      setVetoed(false);
       setMsg(null);
     }
   }, [round]);
 
-  const promptSecs = useCountdown(phase === "prompting" ? round?.deadlineUtc : null);
-  const accuseSecs = useCountdown(phase === "accusing" ? accusation?.deadlineUtc : null);
-  const vetoSecs = useCountdown(phase === "veto" ? vetoWindow?.deadlineUtc : null);
+  // Keep the chat scrollback pinned to the newest round.
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [history, phase, reveal]);
 
   if (!roster) return null;
 
@@ -84,7 +84,7 @@ export default function GamePage() {
   };
 
   const onVeto = async () => {
-    try { await useFakeOut(); }
+    try { await sendFakeOut(); setVetoed(true); }
     catch (err) { setMsg(err.message || "couldn't veto"); }
   };
 
@@ -93,154 +93,258 @@ export default function GamePage() {
     catch (err) { setMsg(err.message || "couldn't restart"); }
   };
 
-  // Who can I accuse? Everyone in the roster except me.
-  const accusable = roster.filter((p) => p.displayName !== myName);
-  // During a priority window, only the named player may accuse.
+  const myTokens = tokens[myName] ?? 0;
+  const iAmEliminated = eliminated.includes(myName);
+  // During a priority window only the named player may accuse.
   const iHavePriority = !accusation?.priorityName || accusation.priorityName === myName;
+  const canIAccuse = phase === "accusing" && iHavePriority && !iAmEliminated && myTokens > 0;
+
+  // The current round's revealed answers (for the live accuse cards), if any.
+  const current = reveal;
 
   return (
-    <div className={`screen ${fakeOut ? "shake" : ""}`}>
+    <div className={`screen game ${fakeOut ? "shake" : ""}`}>
       {fakeOut && (
         <div className="fakeout-overlay">
+          <div className="fakeout-flash" />
           <div className="fakeout-text">{fakeOut.vetoer} used a FAKE-OUT!</div>
         </div>
       )}
 
       <div className="topbar">
-        <span className="who">{myName}</span>
+        <span className="who">{myName} <Tokens n={myTokens} /></span>
         <button className="ghost" onClick={onLeave}>leave</button>
       </div>
 
       {/* END SCREEN */}
       {phase === "ended" && ended ? (
-        <div className="panel">
-          <h1 className="glow">{ended.winType === "Detector" ? "DETECTOR WINS" : "THE AI SURVIVES"}</h1>
-          <p className="tagline">
-            {ended.winType === "Detector"
-              ? `${ended.winnerName} caught the machine.`
-              : "nobody caught it in time."}
-          </p>
-          <div className="reveal-box">
-            the AI was <b className="ai-name">{ended.aiRealIdentityName}</b>
+        <EndScreen
+          ended={ended}
+          myName={myName}
+          onRematch={onRematch}
+          onLeave={onLeave}
+          msg={msg}
+        />
+      ) : (
+        <>
+          {/* ROSTER STRIP with live token badges */}
+          <div className="roster-strip">
+            {roster.map((p) => {
+              const t = tokens[p.displayName] ?? p.tokensRemaining;
+              const out = eliminated.includes(p.displayName);
+              const isMe = p.displayName === myName;
+              return (
+                <div key={p.displayName} className={`chip${out ? " out" : ""}${isMe ? " me" : ""}`}>
+                  <span className="chip-name">{p.displayName}{isMe ? " (you)" : ""}</span>
+                  <Tokens n={t} />
+                </div>
+              );
+            })}
           </div>
 
-          <h3 className="section">transcript</h3>
-          <div className="transcript">
-            {ended.fullTranscript.map((m, i) => (
-              <div key={i} className={m.isAi ? "line ai" : "line"}>
-                <span className="ln-round">r{m.round}</span>
-                <span className="ln-name">{m.displayName}</span>
-                <span className="ln-text">{m.text}</span>
+          {/* CHAT SCROLLBACK */}
+          <div className="panel chat" ref={scrollRef}>
+            {history.length === 0 && phase === "prompting" && (
+              <p className="soon">// first prompt is up — answer below.</p>
+            )}
+            {history.map((h) => (
+              <div key={h.round} className="chat-round">
+                <div className="chat-prompt">
+                  <span className="chat-r">round {h.round}</span> {h.prompt}
+                </div>
+                {h.answers.map((a, i) => (
+                  <div key={i} className={`chat-msg${a.displayName === myName ? " mine" : ""}`}>
+                    <span className="chat-author">{a.displayName}</span>
+                    <span className="chat-text">{a.text}</span>
+                  </div>
+                ))}
               </div>
             ))}
+
+            {/* Live accusation banner (everyone sees who accused whom) */}
+            {accusationMade && phase !== "prompting" && (
+              <div className="chat-system">
+                {accusationMade.accuser} accused {accusationMade.accused}
+              </div>
+            )}
+            {resolved && (
+              <div className={`chat-system ${resolved.correct ? "good" : "bad"}`}>
+                {resolved.accuser} → {resolved.accused}: {resolved.correct ? "CORRECT — caught it!" : "wrong. token burned."}
+              </div>
+            )}
           </div>
 
-          <button className="primary" onClick={onRematch}>rematch</button>
-          <button className="ghost" onClick={onLeave}>back home</button>
-        </div>
-      ) : (
-        <div className="panel">
-          <h1 className="glow">ROUND {round?.number ?? "-"}</h1>
-
-          {/* PROMPT + ANSWER */}
-          {phase === "prompting" && round && (
-            <>
-              <p className="tagline">answer fast — {promptSecs}s</p>
-              <div className="prompt-box">{round.prompt}</div>
-              {submitted ? (
-                <p className="soon">// answer locked in. waiting for the reveal…</p>
-              ) : (
-                <form className="form" onSubmit={onSubmit}>
-                  <input
-                    value={answer}
-                    onChange={(e) => setAnswer(e.target.value)}
-                    maxLength={280}
-                    placeholder="type something human…"
-                    autoFocus
-                  />
-                  <button className="primary" type="submit" disabled={!answer.trim()}>
-                    submit
-                  </button>
-                </form>
-              )}
-            </>
-          )}
-
-          {/* REVEAL + ACCUSE */}
-          {(phase === "revealing" || phase === "accusing" || phase === "veto") && reveal && (
-            <>
-              <p className="tagline">"{reveal.prompt}"</p>
-              <div className="roster">
-                {reveal.answers.map((a, i) => {
-                  const canAccuse =
-                    phase === "accusing" &&
-                    a.displayName !== myName &&
-                    iHavePriority &&
-                    !eliminated.includes(myName);
-                  return (
-                    <div key={i} className="answer-row">
-                      <div className="answer-head">
-                        <span className="seat-name">{a.displayName}</span>
-                        {canAccuse && (
-                          <button className="accuse-btn" onClick={() => onAccuse(a.displayName)}>
-                            accuse
-                          </button>
-                        )}
-                      </div>
-                      <div className="answer-text">{a.text}</div>
+          {/* ACTION DOCK — prompt/answer, timer ring, accuse, veto */}
+          <div className="panel dock">
+            {phase === "prompting" && round && (
+              <div className="dock-row">
+                <CountdownRing
+                  deadlineUtc={round.deadlineUtc}
+                  skewMs={clockSkew}
+                  label="answer"
+                />
+                <div className="dock-main">
+                  <div className="prompt-box">{round.prompt}</div>
+                  {submitted ? (
+                    <div className="answer-locked">
+                      <span className="lock-ico">✓</span> answer locked in. waiting for the reveal…
                     </div>
-                  );
-                })}
+                  ) : (
+                    <form className="answer-form" onSubmit={onSubmit}>
+                      <input
+                        value={answer}
+                        onChange={(e) => setAnswer(e.target.value)}
+                        maxLength={280}
+                        placeholder="type something human…"
+                        autoFocus
+                      />
+                      <div className="answer-form-foot">
+                        <span className="counter">{answer.length}/280</span>
+                        <button className="primary" type="submit" disabled={!answer.trim()}>
+                          submit
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
               </div>
+            )}
 
-              {phase === "accusing" && (
-                <p className="soon">
-                  {accusation?.priorityName
-                    ? `// ${accusation.priorityName} has priority — ${accuseSecs}s`
-                    : `// accusation window — ${accuseSecs}s`}
-                </p>
-              )}
-              {phase === "revealing" && <p className="soon">// reveal… accusation window opens next</p>}
-            </>
-          )}
+            {phase === "revealing" && (
+              <p className="soon">// answers are in. accusation window opens next…</p>
+            )}
 
-          {/* ACCUSATION MADE (everyone sees) */}
-          {accusationMade && phase !== "prompting" && (
-            <div className="reveal-box small">
-              {accusationMade.accuser} accused {accusationMade.accused}
-            </div>
-          )}
+            {phase === "accusing" && current && (
+              <div className="accuse-panel">
+                <div className="dock-row">
+                  <CountdownRing
+                    deadlineUtc={accusation?.deadlineUtc}
+                    skewMs={clockSkew}
+                    label={accusation?.priorityName ? "priority" : "accuse"}
+                  />
+                  <div className="dock-main">
+                    <p className="accuse-hint">
+                      {iAmEliminated
+                        ? "// you're out of tokens — answer-only."
+                        : accusation?.priorityName && !iHavePriority
+                          ? `// ${accusation.priorityName} has priority. hold on…`
+                          : myTokens <= 0
+                            ? "// no tokens left — you can't accuse."
+                            : "// spot the machine. hold to accuse."}
+                    </p>
+                  </div>
+                </div>
+                <div className="accuse-grid">
+                  {current.answers
+                    .filter((a) => a.displayName !== myName)
+                    .map((a, i) => (
+                      <div key={i} className="accuse-card">
+                        <div className="accuse-card-head">
+                          <span className="seat-name">{a.displayName}</span>
+                          <Tokens n={tokens[a.displayName] ?? 3} />
+                        </div>
+                        <div className="accuse-card-text">{a.text}</div>
+                        <AccuseButton
+                          name={a.displayName}
+                          disabled={!canIAccuse}
+                          onConfirm={onAccuse}
+                        />
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
 
-          {/* VETO PROMPT (only eligible token-holders get vetoWindow) */}
-          {phase === "veto" && vetoWindow && (
-            <div className="veto-box">
-              <p>use a fake-out to overrule {accusationMade?.accuser} and keep the game going?</p>
-              <button className="primary danger-btn" onClick={onVeto}>
-                FAKE-OUT ({vetoSecs}s)
-              </button>
-            </div>
-          )}
+            {phase === "veto" && (
+              <div className="veto-box">
+                <div className="dock-row">
+                  <CountdownRing
+                    deadlineUtc={vetoWindow?.deadlineUtc}
+                    skewMs={clockSkew}
+                    label="veto"
+                    size={80}
+                  />
+                  <div className="dock-main">
+                    {vetoWindow ? (
+                      vetoed ? (
+                        <p className="veto-copy">// fake-out sent. keeping the game alive.</p>
+                      ) : (
+                        <>
+                          <p className="veto-copy">
+                            use a fake-out to overrule <b>{accusationMade?.accuser}</b> and keep the
+                            game going? the result stays hidden.
+                          </p>
+                          <button className="primary danger-btn" onClick={onVeto}>
+                            spend a token — FAKE-OUT
+                          </button>
+                        </>
+                      )
+                    ) : (
+                      <p className="veto-copy">
+                        // {accusationMade?.accuser} accused {accusationMade?.accused}. waiting to see
+                        if anyone vetoes…
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
-          {/* RESOLUTION (only when NOT vetoed) */}
-          {resolved && (
-            <div className={`reveal-box ${resolved.correct ? "good" : "bad"}`}>
-              {resolved.accuser} → {resolved.accused}: {resolved.correct ? "correct!" : "wrong"}
-            </div>
-          )}
-
-          {msg && <div className="error">{msg}</div>}
-        </div>
+            {msg && <div className="error">{msg}</div>}
+          </div>
+        </>
       )}
+    </div>
+  );
+}
 
-      {/* EVENT LOG — manual-testing aid, will be dropped/polished in phase 5 */}
-      <div className="panel log">
-        <h3 className="section">event log</h3>
-        <div className="log-lines">
-          {events.slice().reverse().map((e) => (
-            <div key={e.t + e.msg} className="log-line">{e.msg}</div>
-          ))}
-        </div>
+// End screen: winner banner, AI reveal, transcript with the AI's lines highlighted,
+// a stat-deltas placeholder, and a rematch button (host restarts the same lobby).
+function EndScreen({ ended, myName, onRematch, onLeave, msg }) {
+  const detector = ended.winType === "Detector";
+  const iWon = detector && ended.winnerName === myName;
+
+  return (
+    <div className="panel end">
+      <div className={`banner ${detector ? "banner-detector" : "banner-ai"}`}>
+        <h1 className="glow">{detector ? "DETECTOR WINS" : "THE AI SURVIVES"}</h1>
+        <p className="tagline">
+          {detector
+            ? iWon
+              ? "you caught the machine."
+              : `${ended.winnerName} caught the machine.`
+            : "nobody caught it in time."}
+        </p>
       </div>
+
+      <div className="reveal-box big">
+        the AI was <b className="ai-name">{ended.aiRealIdentityName}</b>
+      </div>
+
+      <h3 className="section">the whole transcript — its lines glow red</h3>
+      <div className="transcript">
+        {ended.fullTranscript.map((m, i) => (
+          <div key={i} className={m.isAi ? "line ai" : "line"}>
+            <span className="ln-round">r{m.round}</span>
+            <span className="ln-name">{m.displayName}</span>
+            <span className="ln-text">{m.text}</span>
+          </div>
+        ))}
+      </div>
+
+      <h3 className="section">stat deltas</h3>
+      <div className="reveal-box small">
+        {detector && iWon
+          ? "+1 detector win"
+          : detector
+            ? "the game goes to the detector."
+            : "the machine walked. +1 witnessed escape."}
+        {" "}// full stats tracking lands with the next update.
+      </div>
+
+      {msg && <div className="error">{msg}</div>}
+      <button className="primary" onClick={onRematch}>rematch (same lobby)</button>
+      <button className="ghost" onClick={onLeave}>back home</button>
     </div>
   );
 }
