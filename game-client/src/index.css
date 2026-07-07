@@ -174,3 +174,76 @@ button.ghost:disabled {
   font-size: 0.8rem;
   text-align: center;
 }
+
+/* --- lobby / game --- */
+
+.code {
+  display: flex;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 100%;
+  margin: 0.5rem 0 0.25rem;
+  padding: 0.75rem 0;
+  background: #060a08;
+  border: 1px solid var(--neon);
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 0 14px rgba(57, 255, 20, 0.18);
+}
+
+.code-char {
+  font-size: 2rem;
+  font-weight: bold;
+  letter-spacing: 2px;
+  color: var(--neon);
+  text-shadow: 0 0 10px rgba(57, 255, 20, 0.7);
+}
+
+.roster {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.seat {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  background: #060a08;
+  border: 1px solid var(--neon-dim);
+  border-radius: 6px;
+}
+
+.seat.off {
+  opacity: 0.45;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--neon);
+  box-shadow: 0 0 8px var(--neon);
+  flex: 0 0 auto;
+}
+
+.seat.off .dot {
+  background: var(--muted);
+  box-shadow: none;
+}
+
+.seat-name {
+  flex: 1;
+  color: var(--text);
+}
+
+.badge {
+  font-size: 0.7rem;
+  text-transform: lowercase;
+  color: var(--neon);
+  border: 1px solid var(--neon-dim);
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+}
