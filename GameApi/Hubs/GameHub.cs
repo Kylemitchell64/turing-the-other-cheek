@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using GameApi.GameLoop;
 using GameApi.Lobbies;
 using GameApi.Models;
 
@@ -13,12 +14,16 @@ namespace GameApi.Hubs;
 [Authorize]
 public class GameHub : Hub
 {
+    private const int AnswerMaxLength = 280;
+
     private readonly LobbyStore _store;
+    private readonly GameEngine _engine;
     private readonly ILogger<GameHub> _logger;
 
-    public GameHub(LobbyStore store, ILogger<GameHub> logger)
+    public GameHub(LobbyStore store, GameEngine engine, ILogger<GameHub> logger)
     {
         _store = store;
+        _engine = engine;
         _logger = logger;
     }
 
@@ -91,13 +96,19 @@ public class GameHub : Hub
         var lobby = FindLobbyForCaller() ?? throw new HubException("You're not in a lobby");
 
         List<RosterEntryDto> roster;
+        var outbound = new List<Func<Task>>();
         lock (lobby.Sync)
         {
             if (lobby.HostUserId != UserId)
                 throw new HubException("Only the host can start the game");
 
-            if (lobby.State != GameState.Lobby)
+            // Startable fresh from the Lobby state, or as a rematch from Ended.
+            if (lobby.State != GameState.Lobby && lobby.State != GameState.Ended)
                 throw new HubException("The game has already started");
+
+            // Rematch: wipe last game's tokens/eliminations/transcript, back to Lobby.
+            if (lobby.State == GameState.Ended)
+                lobby.ResetForNewGame();
 
             var humanCount = lobby.Players.Count;
             if (humanCount < 3)
@@ -105,7 +116,7 @@ public class GameHub : Hub
             if (humanCount > 8)
                 throw new HubException("Too many players (max 8)");
 
-            // Inject the AI under a name that collides with no real player.
+            // Fresh AI name each game (including rematches), colliding with no real player.
             var aiName = _store.PickAiName(lobby.Players.Select(p => p.DisplayName));
             lobby.AiDisplayName = aiName;
 
@@ -117,11 +128,135 @@ public class GameHub : Hub
 
             roster = ShuffleAiNotLast(entries, aiName);
 
-            lobby.State = GameState.Prompting;
+            // Engine drives the round loop from here; it sets state to Prompting and
+            // queues the first PromptStarted into outbound.
+            _engine.BeginGame(lobby, outbound);
         }
 
         _logger.LogInformation("Lobby {Code} started with {Count} in roster", lobby.Code, roster.Count);
         await Clients.Group(lobby.Code).SendAsync("GameStarted", roster);
+        foreach (var send in outbound)
+            await send();
+    }
+
+    // Submit this player's answer for the current round. 280-char cap, one per
+    // player per round, only during Prompting.
+    public async Task SubmitAnswer(string text)
+    {
+        var lobby = FindLobbyForCaller() ?? throw new HubException("You're not in a lobby");
+
+        text = (text ?? "").Trim();
+        if (text.Length == 0)
+            throw new HubException("Answer can't be empty");
+        if (text.Length > AnswerMaxLength)
+            text = text[..AnswerMaxLength];
+
+        lock (lobby.Sync)
+        {
+            if (lobby.State != GameState.Prompting)
+                throw new HubException("Not accepting answers right now");
+
+            var me = lobby.FindPlayer(UserId)
+                ?? throw new HubException("You're not in this game");
+
+            if (lobby.Answers.ContainsKey(me.DisplayName))
+                throw new HubException("You already answered this round");
+
+            // Record into live answers + permanent transcript (persisted at game end).
+            lobby.Answers[me.DisplayName] = new RoundAnswer { Text = text, IsAi = false };
+            lobby.Transcript.Add(new RecordedAnswer
+            {
+                Round = lobby.RoundNumber,
+                DisplayName = me.DisplayName,
+                AuthorUserId = me.UserId,
+                Text = text,
+                IsAi = false,
+                SentAtUtc = DateTime.UtcNow
+            });
+        }
+
+        // Ack only to the caller — nothing broadcast; answers stay hidden until reveal.
+        await Clients.Caller.SendAsync("AnswerAccepted", lobby.RoundNumber);
+    }
+
+    // Accuse one player of being the AI. Eligibility: has tokens, not eliminated,
+    // respects the veto-cooldown priority window. First accusation locks the window.
+    public async Task MakeAccusation(string accusedName)
+    {
+        var lobby = FindLobbyForCaller() ?? throw new HubException("You're not in a lobby");
+        accusedName = (accusedName ?? "").Trim();
+
+        var outbound = new List<Func<Task>>();
+        lock (lobby.Sync)
+        {
+            if (lobby.State != GameState.Accusing)
+                throw new HubException("The accusation window isn't open");
+
+            if (lobby.AccuserName != null)
+                throw new HubException("Someone already accused this round");
+
+            var me = lobby.FindPlayer(UserId)
+                ?? throw new HubException("You're not in this game");
+
+            if (me.IsEliminated)
+                throw new HubException("You can't accuse — you're out of tokens");
+            if (me.TokensRemaining <= 0)
+                throw new HubException("You have no tokens left");
+
+            // During a vetoer's exclusive priority sub-window, only they may accuse.
+            if (lobby.InPriorityWindow &&
+                !string.Equals(me.DisplayName, lobby.PriorityVetoerName, StringComparison.Ordinal))
+                throw new HubException("It's the priority window — wait your turn");
+
+            // Blackout round: no accusations at all (shouldn't reach here since the
+            // window never opens, but guard anyway).
+            if (lobby.BlackoutRound == lobby.RoundNumber)
+                throw new HubException("No accusations this round");
+
+            // Target must be a real seat or the AI's name; can't accuse yourself.
+            var isAiName = string.Equals(accusedName, lobby.AiDisplayName, StringComparison.Ordinal);
+            var targetSeat = lobby.FindPlayerByName(accusedName);
+            if (!isAiName && targetSeat == null)
+                throw new HubException("No such player");
+            if (string.Equals(accusedName, me.DisplayName, StringComparison.Ordinal))
+                throw new HubException("You can't accuse yourself");
+
+            lobby.AccuserName = me.DisplayName;
+            lobby.AccusedName = accusedName;
+
+            // Opens the veto window (only to other token-holders) + broadcasts AccusationMade.
+            _engine.OpenVetoWindow(lobby, outbound);
+        }
+
+        foreach (var send in outbound)
+            await send();
+    }
+
+    // Spend a token to veto the locked accusation. Only other token-holders can. The
+    // accusation result is NEVER revealed; a cooldown + priority window follow.
+    public async Task UseFakeOut()
+    {
+        var lobby = FindLobbyForCaller() ?? throw new HubException("You're not in a lobby");
+
+        var outbound = new List<Func<Task>>();
+        lock (lobby.Sync)
+        {
+            if (lobby.State != GameState.VetoWindow)
+                throw new HubException("There's no veto window open");
+
+            var me = lobby.FindPlayer(UserId)
+                ?? throw new HubException("You're not in this game");
+
+            if (!lobby.VetoEligible.Contains(me.DisplayName))
+                throw new HubException("You can't veto this accusation");
+            if (!me.CanVeto)
+                throw new HubException("You can't veto — no tokens or eliminated");
+
+            _engine.ApplyVeto(lobby, me, outbound);
+        }
+
+        foreach (var send in outbound)
+            await send();
     }
 
     public override async Task OnDisconnectedAsync(Exception? exception)
