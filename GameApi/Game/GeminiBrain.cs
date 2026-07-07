@@ -1,33 +1,22 @@
 using System.Text;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace GameApi.GameLoop;
 
-// The real impostor brain. Calls Google Gemini (gemini-2.5-flash) over the raw REST
-// API (generativelanguage.googleapis.com/v1beta), runs the AI-DESIGN post-processing
-// pipeline over the output, and sizes the send delay with the shared timing model.
+// The real impostor brain. Calls Google Gemini (gemini-2.5-flash) through the shared
+// GeminiClient, runs the AI-DESIGN post-processing pipeline over the output, and sizes
+// the send delay with the shared timing model.
 //
-// No SDK: an IHttpClientFactory-supplied HttpClient posts the generateContent body.
 // On any non-200/timeout it does ONE 800ms-backoff retry (6s total budget), then
 // falls back to a canned answer (section 6). The delay still comes from the timing
 // model in every path so nothing insta-sends after a stall.
 public class GeminiBrain : IAiBrain
 {
-    private const string Model = "gemini-2.5-flash";
-    private const string BaseUrl =
-        "https://generativelanguage.googleapis.com/v1beta/models/" + Model + ":generateContent";
-
-    private readonly IHttpClientFactory _httpFactory;
-    private readonly string? _apiKey;
+    private readonly GeminiClient _gemini;
     private readonly ILogger<GeminiBrain> _logger;
 
-    public GeminiBrain(IHttpClientFactory httpFactory, IConfiguration config, ILogger<GeminiBrain> logger)
+    public GeminiBrain(GeminiClient gemini, ILogger<GeminiBrain> logger)
     {
-        _httpFactory = httpFactory;
-        _apiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY")
-            ?? config["GEMINI_API_KEY"]
-            ?? config["Gemini:ApiKey"];
+        _gemini = gemini;
         _logger = logger;
     }
 
@@ -133,7 +122,7 @@ public class GeminiBrain : IAiBrain
         return template.Remove(s, e - s);
     }
 
-    // ---- HTTP ----
+    // ---- HTTP (via the shared GeminiClient) ----
 
     // 1 retry with 800ms backoff on any non-200/timeout, 6s total budget.
     private async Task<string?> CallWithRetryAsync(string systemPrompt, string userPrompt, CancellationToken ct)
@@ -150,112 +139,9 @@ public class GeminiBrain : IAiBrain
         return await CallOnceAsync(systemPrompt, userPrompt, budget.Token);
     }
 
-    // A single generateContent call. Returns the text on 200, null on any failure.
-    private async Task<string?> CallOnceAsync(string systemPrompt, string userPrompt, CancellationToken ct)
-    {
-        if (string.IsNullOrEmpty(_apiKey))
-        {
-            _logger.LogWarning("GEMINI_API_KEY not configured");
-            return null;
-        }
-
-        try
-        {
-            var body = new GeminiRequest
-            {
-                Contents = new[]
-                {
-                    new GeminiContent
-                    {
-                        Role = "user",
-                        Parts = new[] { new GeminiPart { Text = userPrompt } }
-                    }
-                },
-                SystemInstruction = new GeminiContent
-                {
-                    Parts = new[] { new GeminiPart { Text = systemPrompt } }
-                },
-                GenerationConfig = new GeminiGenerationConfig
-                {
-                    Temperature = 1.0,
-                    MaxOutputTokens = 200,
-                    TopP = 0.95
-                }
-            };
-
-            var json = JsonSerializer.Serialize(body, JsonOpts);
-            using var req = new HttpRequestMessage(HttpMethod.Post, BaseUrl)
-            {
-                Content = new StringContent(json, Encoding.UTF8, "application/json")
-            };
-            req.Headers.Add("x-goog-api-key", _apiKey);
-
-            var client = _httpFactory.CreateClient("gemini");
-            using var resp = await client.SendAsync(req, ct);
-            if (!resp.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("Gemini HTTP {Status}", (int)resp.StatusCode);
-                return null;
-            }
-
-            var respJson = await resp.Content.ReadAsStringAsync(ct);
-            var parsed = JsonSerializer.Deserialize<GeminiResponse>(respJson, JsonOpts);
-            var textOut = parsed?.Candidates?.FirstOrDefault()?.Content?.Parts?.FirstOrDefault()?.Text;
-            return string.IsNullOrWhiteSpace(textOut) ? null : textOut;
-        }
-        catch (OperationCanceledException)
-        {
-            return null;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Gemini request threw");
-            return null;
-        }
-    }
-
-    private static readonly JsonSerializerOptions JsonOpts = new()
-    {
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-        PropertyNameCaseInsensitive = true
-    };
-
-    // ---- request/response DTOs (v1beta generateContent) ----
-
-    private sealed class GeminiRequest
-    {
-        [JsonPropertyName("contents")] public GeminiContent[] Contents { get; set; } = default!;
-        [JsonPropertyName("systemInstruction")] public GeminiContent? SystemInstruction { get; set; }
-        [JsonPropertyName("generationConfig")] public GeminiGenerationConfig? GenerationConfig { get; set; }
-    }
-
-    private sealed class GeminiContent
-    {
-        [JsonPropertyName("role")] public string? Role { get; set; }
-        [JsonPropertyName("parts")] public GeminiPart[] Parts { get; set; } = default!;
-    }
-
-    private sealed class GeminiPart
-    {
-        [JsonPropertyName("text")] public string? Text { get; set; }
-    }
-
-    private sealed class GeminiGenerationConfig
-    {
-        [JsonPropertyName("temperature")] public double Temperature { get; set; }
-        [JsonPropertyName("maxOutputTokens")] public int MaxOutputTokens { get; set; }
-        [JsonPropertyName("topP")] public double TopP { get; set; }
-    }
-
-    private sealed class GeminiResponse
-    {
-        [JsonPropertyName("candidates")] public GeminiCandidate[]? Candidates { get; set; }
-    }
-
-    private sealed class GeminiCandidate
-    {
-        [JsonPropertyName("content")] public GeminiContent? Content { get; set; }
-    }
+    // A single generateContent call at the impostor's temperature/token budget.
+    private Task<string?> CallOnceAsync(string systemPrompt, string userPrompt, CancellationToken ct) =>
+        _gemini.GenerateAsync(systemPrompt, userPrompt, temperature: 1.0, maxOutputTokens: 200, ct);
 
     // ---- the template (AI-DESIGN section 1, verbatim) ----
 

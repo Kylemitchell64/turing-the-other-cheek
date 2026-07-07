@@ -138,9 +138,15 @@ var geminiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY")
 var brainChoice = builder.Configuration["Ai:Brain"]
     ?? (string.IsNullOrEmpty(geminiKey) ? "Mock" : "Gemini");
 
+// The shared Gemini transport backs both the impostor brain and the style summarizer,
+// so the named http client + client are always registered (the summarizer runs even
+// under the Mock brain — it just no-ops without a key).
+builder.Services.AddHttpClient("gemini", c => c.Timeout = TimeSpan.FromSeconds(6));
+builder.Services.AddSingleton<GameApi.GameLoop.GeminiClient>();
+builder.Services.AddSingleton<GameApi.GameLoop.StyleSummarizer>();
+
 if (string.Equals(brainChoice, "Gemini", StringComparison.OrdinalIgnoreCase))
 {
-    builder.Services.AddHttpClient("gemini", c => c.Timeout = TimeSpan.FromSeconds(6));
     builder.Services.AddSingleton<GameApi.GameLoop.IAiBrain, GameApi.GameLoop.GeminiBrain>();
 }
 else

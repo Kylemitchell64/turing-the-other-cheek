@@ -95,6 +95,14 @@ public class GameHub : Hub
         // it up from their connection.
         var lobby = FindLobbyForCaller() ?? throw new HubException("You're not in a lobby");
 
+        // On-demand style-profile refresh before we inject summaries: if a member has
+        // samples but a missing/stale profile, regenerate it now (off the lock, awaited)
+        // so the AI plays with the freshest notes. Best-effort — never blocks the start.
+        var memberIds = new List<string>();
+        lock (lobby.Sync)
+            memberIds.AddRange(lobby.Players.Select(p => p.UserId));
+        await _engine.RefreshStyleProfilesAsync(memberIds);
+
         List<RosterEntryDto> roster;
         var outbound = new List<Func<Task>>();
         lock (lobby.Sync)
