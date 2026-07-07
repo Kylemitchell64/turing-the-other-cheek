@@ -1,0 +1,27 @@
+# local orchestration / notes - never commit
+HANDOFF.md
+PROGRESS.md
+NOTES-FOR-KYLE.md
+DEPLOY-CHECKLIST-LOCAL.md
+overnight-runner.ps1
+overnight.log
+.runner.lock
+
+# secrets
+.env
+*.env.local
+appsettings.Development.json
+
+# dotnet
+bin/
+obj/
+*.user
+
+# node
+node_modules/
+dist/
+.vite/
+
+# misc
+.DS_Store
+Thumbs.db
