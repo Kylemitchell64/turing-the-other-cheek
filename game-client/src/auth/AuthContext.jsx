@@ -1,8 +1,7 @@
 import { createContext, useContext, useState, useCallback } from "react";
+import { API_BASE } from "../api/config";
 
 const AuthContext = createContext(null);
-
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5222";
 
 function parseJwt(token) {
   try {

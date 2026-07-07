@@ -2,7 +2,7 @@
 // Returns { ok, status, data } instead of throwing on HTTP errors so screens can
 // degrade gracefully — the samples/stats APIs land in later phases and 404 until then.
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5222";
+import { API_BASE } from "./config";
 
 export { API_BASE };
 

@@ -1,6 +1,5 @@
 import { HubConnectionBuilder, HttpTransportType, LogLevel } from "@microsoft/signalr";
-
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:5222";
+import { API_BASE } from "../api/config";
 
 // Builds a hub connection that carries the JWT as ?access_token= (the server pulls
 // it off the query for the hub path). Auto-reconnect handles a phone screen-lock —
