@@ -129,7 +129,25 @@ builder.Services.AddSingleton(sp =>
     cfg.GetSection("GameTimings").Bind(t);
     return t;
 });
-builder.Services.AddSingleton<GameApi.GameLoop.IAiBrain, GameApi.GameLoop.MockBrain>();
+
+// Brain selection by config: "Ai:Brain" = "Gemini" | "Mock". Default to Gemini when
+// a GEMINI_API_KEY is present, otherwise the Mock (so a keyless run still works).
+var geminiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY")
+    ?? builder.Configuration["GEMINI_API_KEY"]
+    ?? builder.Configuration["Gemini:ApiKey"];
+var brainChoice = builder.Configuration["Ai:Brain"]
+    ?? (string.IsNullOrEmpty(geminiKey) ? "Mock" : "Gemini");
+
+if (string.Equals(brainChoice, "Gemini", StringComparison.OrdinalIgnoreCase))
+{
+    builder.Services.AddHttpClient("gemini", c => c.Timeout = TimeSpan.FromSeconds(6));
+    builder.Services.AddSingleton<GameApi.GameLoop.IAiBrain, GameApi.GameLoop.GeminiBrain>();
+}
+else
+{
+    builder.Services.AddSingleton<GameApi.GameLoop.IAiBrain, GameApi.GameLoop.MockBrain>();
+}
+
 builder.Services.AddSingleton<GameApi.GameLoop.GameEngine>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<GameApi.GameLoop.GameEngine>());
 
