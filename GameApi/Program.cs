@@ -7,6 +7,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using GameApi.Data;
 using GameApi.HealthChecks;
+using GameApi.Hubs;
+using GameApi.Lobbies;
 using GameApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -55,19 +57,44 @@ builder.Services.AddAuthentication(o =>
         ValidAudience = "turing-app",
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
     };
+
+    // SignalR can't send Authorization headers on the WebSocket handshake, so the
+    // client passes the JWT as ?access_token=... . Pull it off the query for hub
+    // requests only (standard SignalR JwtBearer pattern).
+    o.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/game"))
+                context.Token = accessToken;
+            return Task.CompletedTask;
+        }
+    };
 });
 
-// Rate limiter: fixed window 30 req/min per IP
+// Rate limiter: fixed window 30 req/min per IP. Permit count is config-driven so
+// the integration test suite (which hammers /api/auth/register) can raise it.
+var rateLimitPermits = builder.Configuration.GetValue<int?>("RateLimit:PermitsPerMinute") ?? 30;
 builder.Services.AddRateLimiter(o =>
 {
     o.GlobalLimiter = System.Threading.RateLimiting.PartitionedRateLimiter.Create<HttpContext, string>(context =>
-        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+    {
+        // The SignalR hub is a persistent transport — long-polling fires many HTTP
+        // requests per connection. Rate-limiting it would throttle live gameplay, so
+        // it's exempt; hub methods have their own in-lobby guards.
+        if (context.Request.Path.StartsWithSegments("/hubs"))
+            return System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter("hub");
+
+        return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
             {
-                PermitLimit = 30,
+                PermitLimit = rateLimitPermits,
                 Window = TimeSpan.FromMinutes(1)
-            }));
+            });
+    });
     o.RejectionStatusCode = 429;
 });
 
@@ -87,6 +114,10 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddScoped<DatabaseHealthCheck>();
+
+// Realtime: SignalR + the process-wide in-memory lobby store.
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<LobbyStore>();
 
 builder.Services
     .AddControllers(options => options.ReturnHttpNotAcceptable = true)
@@ -128,5 +159,9 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<GameHub>("/hubs/game");
 
 app.Run();
+
+// Exposed so the integration test project can spin the app up via WebApplicationFactory.
+public partial class Program { }

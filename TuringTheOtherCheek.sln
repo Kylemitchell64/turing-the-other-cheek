@@ -5,6 +5,8 @@ VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GameApi", "GameApi\GameApi.csproj", "{4558DACE-7E9F-4ABB-823E-AB111BAB60D4}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GameApi.Tests", "GameApi.Tests\GameApi.Tests.csproj", "{9327C4C0-25C1-41DC-BE2D-2B22511C5BB1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{4558DACE-7E9F-4ABB-823E-AB111BAB60D4}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4558DACE-7E9F-4ABB-823E-AB111BAB60D4}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4558DACE-7E9F-4ABB-823E-AB111BAB60D4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9327C4C0-25C1-41DC-BE2D-2B22511C5BB1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9327C4C0-25C1-41DC-BE2D-2B22511C5BB1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9327C4C0-25C1-41DC-BE2D-2B22511C5BB1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9327C4C0-25C1-41DC-BE2D-2B22511C5BB1}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
