@@ -2,6 +2,7 @@
 HANDOFF.md
 PROGRESS.md
 AI-DESIGN.md
+MORNING.md
 NOTES-FOR-KYLE.md
 DEPLOY-CHECKLIST-LOCAL.md
 overnight-runner.ps1
@@ -22,6 +23,9 @@ obj/
 node_modules/
 dist/
 .vite/
+
+# built client dropped into the api by the docker build (or a local publish)
+GameApi/wwwroot/
 
 # local preview config
 .claude/

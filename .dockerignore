@@ -1,0 +1,39 @@
+# node — reinstalled inside the client build stage
+**/node_modules
+game-client/dist
+game-client/.vite
+
+# dotnet build output — rebuilt inside the build stage
+**/bin
+**/obj
+
+# git
+.git
+.gitignore
+
+# secrets / local config — never into the image
+**/.env
+**/*.env.local
+**/appsettings.Development.json
+
+# orchestration + notes (gitignored anyway, keep them out of the build context)
+HANDOFF.md
+PROGRESS.md
+MORNING.md
+NOTES-FOR-KYLE.md
+AI-DESIGN.md
+DEPLOY-CHECKLIST-LOCAL.md
+overnight-runner.ps1
+overnight.log
+.runner.lock
+
+# tests aren't needed to build the runtime image
+GameApi.Tests
+
+# editor / os
+.vs
+.vscode
+.claude
+*.user
+.DS_Store
+Thumbs.db

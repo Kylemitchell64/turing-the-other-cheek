@@ -13,6 +13,16 @@ using GameApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Render (and most container hosts) inject the listen port via $PORT. When it's set
+// and ASPNETCORE_URLS wasn't given explicitly, bind 0.0.0.0:$PORT. The Dockerfile
+// leaves ASPNETCORE_URLS unset and defaults to 8080 here so PORT always wins in prod.
+if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
+{
+    var port = Environment.GetEnvironmentVariable("PORT");
+    if (!string.IsNullOrEmpty(port))
+        builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+}
+
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? "Host=localhost;Port=5432;Database=turing;Username=postgres;Password=postgres";
 
@@ -175,6 +185,13 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 
 app.UseCors("AllowFrontend");
 
+// Serve the built React client from wwwroot so the Docker image is self-contained
+// (playable on its own). The API routes and the hub are mapped below and take
+// precedence; MapFallbackToFile only catches paths that aren't /api/* or /hubs/*,
+// so client-side routes (e.g. /lobby/ABCDE) resolve to index.html.
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -198,6 +215,12 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<GameHub>("/hubs/game");
+
+// SPA fallback: anything not matched by an API controller, the hub, or a static
+// file returns index.html so React Router owns client-side navigation. Skipped
+// when wwwroot has no index.html (e.g. running the API standalone in dev).
+if (File.Exists(Path.Combine(app.Environment.WebRootPath ?? "wwwroot", "index.html")))
+    app.MapFallbackToFile("index.html");
 
 app.Run();
 
