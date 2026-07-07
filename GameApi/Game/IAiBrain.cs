@@ -10,23 +10,41 @@ public record RoundHistory(int Round, string Prompt, IReadOnlyList<HistoryAnswer
 
 public record HistoryAnswer(string DisplayName, string Text);
 
-// Everything the brain needs to produce this round's answer. Phase 4's GeminiBrain
-// will feed most of this straight into the model prompt; MockBrain ignores it.
+// Statistics about the group's answers so far, driving post-processing (case /
+// trailing-period / typo conformance) and the timing median clamp. Computed by the
+// engine from every human+AI answer recorded to date. See AI-DESIGN sections 2 & 4.
+public record GroupStats(
+    double MedianAnswerLength,
+    double LowercaseStartRate,
+    double TrailingPeriodRate,
+    double MeanTypoRate);
+
+// Everything the brain needs to produce this round's answer. GeminiBrain feeds most
+// of this into the model prompt; MockBrain ignores the text fields but still uses
+// the group stats + timing state to size its delay.
 public record AiTurnContext(
     string CurrentPrompt,
     int RoundNumber,
     string AiDisplayName,
     IReadOnlyList<string> HumanDisplayNames,
     IReadOnlyList<RoundHistory> History,
-    // Compact per-human style summaries (StyleProfiles.SummaryJson) once phase 6
-    // wires them in. Empty for now.
+    // The AI's own prior answers (newline-joined into the prompt), for continuity.
+    IReadOnlyList<string> PreviousOwnAnswers,
+    // Compact per-human style summaries: one "NAME: {json}" line each. From
+    // StyleProfiles.SummaryJson (phase 6); empty when no profiles exist yet.
     IReadOnlyList<string> StyleSummaries,
+    // Group-answer statistics for post-processing + timing.
+    GroupStats GroupStats,
+    // Timing anti-pattern memory for this lobby (last 3 delays). Mutated in place.
+    AnswerTiming.State TimingState,
+    // Per-lobby fallback bookkeeping (used set + count), for the canned-answer path.
+    FallbackState FallbackState,
     // Time left in the prompt window when we asked — the brain sizes its delay so
     // the answer still lands before the deadline.
     TimeSpan TimeRemaining);
 
-// The AI player. Phase 4 adds GeminiBrain (real API, backoff, canned fallback);
-// this phase ships MockBrain only. Async + cancellation so a real HTTP call can be
+// The AI player. GeminiBrain is the real impl (API, backoff, canned fallback);
+// MockBrain backs the tests. Async + cancellation so a real HTTP call can be
 // aborted if the round ends early.
 public interface IAiBrain
 {

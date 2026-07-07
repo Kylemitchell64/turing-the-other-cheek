@@ -1,6 +1,7 @@
 # local orchestration / notes - never commit
 HANDOFF.md
 PROGRESS.md
+AI-DESIGN.md
 NOTES-FOR-KYLE.md
 DEPLOY-CHECKLIST-LOCAL.md
 overnight-runner.ps1
