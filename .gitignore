@@ -22,6 +22,9 @@ node_modules/
 dist/
 .vite/
 
+# local preview config
+.claude/
+
 # misc
 .DS_Store
 Thumbs.db
