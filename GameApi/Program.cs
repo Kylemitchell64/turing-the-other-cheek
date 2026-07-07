@@ -119,6 +119,20 @@ builder.Services.AddScoped<DatabaseHealthCheck>();
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<LobbyStore>();
 
+// Game loop: round timings (config-overridable so tests run fast), the AI brain
+// (MockBrain this phase; GeminiBrain lands in phase 4), and the engine — one
+// instance serving both DI (the hub injects it) and the hosted tick loop.
+builder.Services.AddSingleton(sp =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    var t = new GameApi.GameLoop.GameTimings();
+    cfg.GetSection("GameTimings").Bind(t);
+    return t;
+});
+builder.Services.AddSingleton<GameApi.GameLoop.IAiBrain, GameApi.GameLoop.MockBrain>();
+builder.Services.AddSingleton<GameApi.GameLoop.GameEngine>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<GameApi.GameLoop.GameEngine>());
+
 builder.Services
     .AddControllers(options => options.ReturnHttpNotAcceptable = true)
     .AddJsonOptions(options =>
