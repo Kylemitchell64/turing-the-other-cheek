@@ -86,6 +86,11 @@ public class Lobby
     // priority sub-window (before the general window opens).
     public bool InPriorityWindow { get; set; }
 
+    // UserIds of players who made at least one WRONG accusation this game. On an AI
+    // survival win, every one of them gets +1 TimesFooled (spec's rule). Set of user
+    // ids so a player who whiffs twice is only counted once.
+    public HashSet<string> WrongAccuserUserIds { get; } = new(StringComparer.Ordinal);
+
     // Result state for the game, filled at end.
     public WinType WinType { get; set; } = WinType.None;
     public string? WinnerUserId { get; set; }
@@ -111,6 +116,7 @@ public class Lobby
         AccuserName = null;
         AccusedName = null;
         VetoEligible.Clear();
+        WrongAccuserUserIds.Clear();
         BlackoutRound = null;
         PriorityVetoerName = null;
         PriorityRound = null;

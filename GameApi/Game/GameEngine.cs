@@ -21,6 +21,7 @@ public class GameEngine : BackgroundService
     private readonly IHubContext<GameHub> _hub;
     private readonly IAiBrain _brain;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly StyleSummarizer _summarizer;
     private readonly GameTimings _timings;
     private readonly ILogger<GameEngine> _logger;
 
@@ -29,6 +30,7 @@ public class GameEngine : BackgroundService
         IHubContext<GameHub> hub,
         IAiBrain brain,
         IServiceScopeFactory scopeFactory,
+        StyleSummarizer summarizer,
         GameTimings timings,
         ILogger<GameEngine> logger)
     {
@@ -36,6 +38,7 @@ public class GameEngine : BackgroundService
         _hub = hub;
         _brain = brain;
         _scopeFactory = scopeFactory;
+        _summarizer = summarizer;
         _timings = timings;
         _logger = logger;
     }
@@ -416,6 +419,8 @@ public class GameEngine : BackgroundService
         var loser = lobby.FindPlayerByName(accuserName);
         if (loser != null)
         {
+            // Track for TimesFooled: a wrong accusation counts if the AI ends up surviving.
+            lobby.WrongAccuserUserIds.Add(loser.UserId);
             loser.TokensRemaining = Math.Max(0, loser.TokensRemaining - 1);
             if (loser.TokensRemaining == 0 && !loser.IsEliminated)
             {
@@ -510,6 +515,12 @@ public class GameEngine : BackgroundService
     // The cached per-human style-summary lines loaded at game start.
     private static IReadOnlyList<string> BuildStyleSummaries(Lobby lobby) => lobby.StyleSummaries;
 
+    // On-demand style-profile refresh (missing/stale → regenerate). Called by the hub
+    // at lobby start before summaries are loaded. Best-effort; the summarizer swallows
+    // its own failures so a start never blocks on Gemini.
+    public Task RefreshStyleProfilesAsync(IEnumerable<string> userIds) =>
+        _summarizer.RefreshStaleProfilesAsync(userIds);
+
     // Pull each style profile's typoRate out of its JSON for the group typo mean.
     // Cheap parse; a missing/unparseable field just contributes nothing.
     private static List<double> StyleTypoRates(Lobby lobby)
@@ -550,6 +561,7 @@ public class GameEngine : BackgroundService
         List<(string UserId, int Tokens, bool Eliminated, int VetoerCount)> Players,
         List<(int Round, string? AuthorUserId, string DisplayName, string Text, DateTime SentAt)> Messages,
         List<(int Round, string Prompt)> RoundPrompts,
+        HashSet<string> WrongAccuserUserIds,
         int FallbackCount);
 
     private static PersistSnapshot SnapshotForPersist(Lobby lobby) => new(
@@ -567,6 +579,7 @@ public class GameEngine : BackgroundService
             .OrderBy(kv => kv.Key)
             .Select(kv => (kv.Key, kv.Value))
             .ToList(),
+        WrongAccuserUserIds: new HashSet<string>(lobby.WrongAccuserUserIds, StringComparer.Ordinal),
         FallbackCount: lobby.FallbackState.Count);
 
     // Write Games / GamePlayers / GameMessages at game end. Real author ids land
@@ -621,12 +634,73 @@ public class GameEngine : BackgroundService
             }
 
             db.Games.Add(game);
+
+            // ---- post-game harvesting: each human's answers this game feed their
+            // sample pool (Source=Game). GameMessages above are the source of truth,
+            // so we read the human, non-blank messages straight off the snapshot.
+            var harvestedUserIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var m in snap.Messages)
+            {
+                if (m.AuthorUserId == null) continue;        // AI answer, never harvested
+                if (m.Text == "(no answer)") continue;       // skipped a round, nothing to learn
+                db.WritingSamples.Add(new WritingSample
+                {
+                    UserId = m.AuthorUserId,
+                    Text = m.Text,
+                    Source = SampleSource.Game,
+                    CreatedAt = m.SentAt
+                });
+                harvestedUserIds.Add(m.AuthorUserId);
+            }
+
+            // ---- stats: every finisher +GamesPlayed; the detector +DetectorWins; on an
+            // AI-survival game every wrong-accuser +TimesFooled and every finisher
+            // +AiSurvivalGamesWitnessed. Rows created lazily.
+            var finisherIds = snap.Players.Select(p => p.UserId).Distinct().ToList();
+            var existing = await db.PlayerStats
+                .Where(s => finisherIds.Contains(s.UserId))
+                .ToDictionaryAsync(s => s.UserId);
+
+            PlayerStats StatsFor(string userId)
+            {
+                if (existing.TryGetValue(userId, out var s)) return s;
+                s = new PlayerStats { UserId = userId };
+                existing[userId] = s;
+                db.PlayerStats.Add(s);
+                return s;
+            }
+
+            var aiSurvived = snap.WinType == WinType.AiSurvival;
+            foreach (var userId in finisherIds)
+            {
+                var s = StatsFor(userId);
+                s.GamesPlayed++;
+                if (aiSurvived)
+                    s.AiSurvivalGamesWitnessed++;
+            }
+
+            if (snap.WinType == WinType.Detector && snap.WinnerUserId != null)
+                StatsFor(snap.WinnerUserId).DetectorWins++;
+
+            if (aiSurvived)
+                foreach (var userId in snap.WrongAccuserUserIds)
+                    StatsFor(userId).TimesFooled++;
+
             await db.SaveChangesAsync();
 
             // How often Gemini flaked this game (rate limits / errors → canned answers).
             if (snap.FallbackCount > 0)
                 _logger.LogInformation(
                     "Game {Code} used {Count} fallback answer(s)", snap.JoinCode, snap.FallbackCount);
+
+            // ---- fire-and-forget style summary job: the harvested answers just changed
+            // each player's pool, so their profiles are now stale. Regenerate off the
+            // engine loop; the summarizer swallows its own failures.
+            if (harvestedUserIds.Count > 0)
+            {
+                var toRefresh = harvestedUserIds.ToList();
+                _ = Task.Run(() => _summarizer.RefreshStaleProfilesAsync(toRefresh));
+            }
         }
         catch (Exception ex)
         {
