@@ -20,7 +20,7 @@ export default function GamePage() {
   const { user } = useAuth();
   const {
     roster, phase, round, reveal, accusation, accusationMade,
-    vetoWindow, fakeOut, resolved, eliminated, ended, history,
+    vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, history,
     tokens, clockSkew,
     leaveLobby, submitAnswer, makeAccusation, useFakeOut: sendFakeOut, startGame,
   } = useLobby();
@@ -121,6 +121,7 @@ export default function GamePage() {
         <EndScreen
           ended={ended}
           myName={myName}
+          iWasFooled={wrongAccusers.includes(myName)}
           onRematch={onRematch}
           onLeave={onLeave}
           msg={msg}
@@ -299,10 +300,20 @@ export default function GamePage() {
 }
 
 // End screen: winner banner, AI reveal, transcript with the AI's lines highlighted,
-// a stat-deltas placeholder, and a rematch button (host restarts the same lobby).
-function EndScreen({ ended, myName, onRematch, onLeave, msg }) {
+// this player's stat deltas, and a rematch button (host restarts the same lobby).
+function EndScreen({ ended, myName, iWasFooled, onRematch, onLeave, msg }) {
   const detector = ended.winType === "Detector";
   const iWon = detector && ended.winnerName === myName;
+
+  // Per-viewer deltas, mirroring the server's PlayerStats increments: everyone who
+  // finished a game gets +1 games played; the detector gets +1 detector win; when the
+  // AI survives every finisher +1 witnessed escape and every wrong-accuser +1 fooled.
+  const deltas = ["+1 game played"];
+  if (iWon) deltas.push("+1 detector win");
+  if (!detector) {
+    deltas.push("+1 ai escape witnessed");
+    if (iWasFooled) deltas.push("+1 times fooled");
+  }
 
   return (
     <div className="panel end">
@@ -332,14 +343,9 @@ function EndScreen({ ended, myName, onRematch, onLeave, msg }) {
         ))}
       </div>
 
-      <h3 className="section">stat deltas</h3>
+      <h3 className="section">your stat deltas</h3>
       <div className="reveal-box small">
-        {detector && iWon
-          ? "+1 detector win"
-          : detector
-            ? "the game goes to the detector."
-            : "the machine walked. +1 witnessed escape."}
-        {" "}// full stats tracking lands with the next update.
+        {deltas.join("  ·  ")}
       </div>
 
       {msg && <div className="error">{msg}</div>}

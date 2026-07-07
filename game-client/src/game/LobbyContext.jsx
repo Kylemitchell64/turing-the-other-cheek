@@ -26,6 +26,7 @@ export function LobbyProvider({ children }) {
   const [fakeOut, setFakeOut] = useState(null); // { vetoer } — drives the shake overlay
   const [resolved, setResolved] = useState(null); // { correct, accuser, accused }
   const [eliminated, setEliminated] = useState([]); // display names knocked out of accusing
+  const [wrongAccusers, setWrongAccusers] = useState([]); // names who accused wrong (unvetoed) — drives end-screen deltas
   const [ended, setEnded] = useState(null); // { winType, winnerName, aiRealIdentityName, fullTranscript[] }
   const [events, setEvents] = useState([]); // a simple scrolling event log for manual testing
 
@@ -64,6 +65,7 @@ export function LobbyProvider({ children }) {
         setEnded(null);
         setReveal(null);
         setEliminated([]);
+        setWrongAccusers([]);
         setEvents([]);
         setHistory([]);
         // Seed live token counts from the roster (each entry carries its start count).
@@ -122,9 +124,11 @@ export function LobbyProvider({ children }) {
       conn.on("AccusationResolved", (correct, accuser, accused) => {
         setResolved({ correct, accuser, accused });
         setVetoWindow(null);
-        // A wrong, unvetoed accusation burns one of the accuser's tokens.
+        // A wrong, unvetoed accusation burns one of the accuser's tokens and, if the
+        // AI ends up surviving, counts as a "times fooled" for that accuser.
         if (!correct) {
           setTokens((prev) => ({ ...prev, [accuser]: Math.max(0, (prev[accuser] ?? 0) - 1) }));
+          setWrongAccusers((prev) => (prev.includes(accuser) ? prev : [...prev, accuser]));
         }
         log(`resolved: ${accuser} → ${accused} was ${correct ? "CORRECT" : "wrong"}`);
       });
@@ -203,6 +207,7 @@ export function LobbyProvider({ children }) {
     setVetoWindow(null);
     setResolved(null);
     setEliminated([]);
+    setWrongAccusers([]);
     setEnded(null);
     setEvents([]);
     setHistory([]);
@@ -217,7 +222,7 @@ export function LobbyProvider({ children }) {
   const value = {
     status, lobby, roster, error, setError,
     round, phase, reveal, accusation, accusationMade,
-    vetoWindow, fakeOut, resolved, eliminated, ended, events,
+    vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, events,
     tokens, clockSkew, history,
     createLobby, joinLobby, startGame, leaveLobby,
     submitAnswer, makeAccusation, useFakeOut,
