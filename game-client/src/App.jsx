@@ -4,6 +4,8 @@ import LoginPage from "./pages/LoginPage";
 import HomePage from "./pages/HomePage";
 import LobbyPage from "./pages/LobbyPage";
 import GamePage from "./pages/GamePage";
+import WritingSamplesPage from "./pages/WritingSamplesPage";
+import StatsPage from "./pages/StatsPage";
 
 export default function App() {
   return (
@@ -30,6 +32,22 @@ export default function App() {
         element={
           <ProtectedRoute>
             <GamePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/samples"
+        element={
+          <ProtectedRoute>
+            <WritingSamplesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/stats"
+        element={
+          <ProtectedRoute>
+            <StatsPage />
           </ProtectedRoute>
         }
       />

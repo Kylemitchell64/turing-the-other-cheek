@@ -61,8 +61,8 @@ export default function HomePage() {
             <button className="ghost" onClick={() => { setJoining(true); setErr(null); }} disabled={busy}>
               join by code
             </button>
-            <button className="ghost" disabled>my stats</button>
-            <button className="ghost" disabled>writing samples</button>
+            <button className="ghost" onClick={() => navigate("/stats")} disabled={busy}>my stats</button>
+            <button className="ghost" onClick={() => navigate("/samples")} disabled={busy}>writing samples</button>
           </div>
         ) : (
           <form className="form" onSubmit={onJoin}>

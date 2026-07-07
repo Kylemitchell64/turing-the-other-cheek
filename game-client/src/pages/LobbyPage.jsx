@@ -75,11 +75,14 @@ export default function LobbyPage() {
           {lobby.players.map((p) => (
             <div key={p.displayName} className={p.isConnected ? "seat" : "seat off"}>
               <span className="dot" />
-              <span className="seat-name">{p.displayName}</span>
+              <span className="seat-name">
+                {p.displayName}{p.displayName === myName ? " (you)" : ""}
+              </span>
               {p.isHost && <span className="badge">host</span>}
             </div>
           ))}
         </div>
+        <p className="soon">// everyone starts with 3 fake-out tokens</p>
 
         {err && <div className="error">{err}</div>}
 
