@@ -27,7 +27,17 @@ public class TestAppFactory : WebApplicationFactory<Program>
                 ["Jwt:Key"] = "test-only-signing-key-that-is-at-least-64-characters-long-000000000",
                 // TestServer sees every request as one IP; raise the limit so the
                 // suite's many registrations don't trip the 429.
-                ["RateLimit:PermitsPerMinute"] = "1000"
+                ["RateLimit:PermitsPerMinute"] = "1000",
+                // Tiny round timings so the full playtest (multiple rounds, veto,
+                // cooldown, priority) runs in seconds instead of minutes. All the
+                // state-machine logic is identical; only the clocks are compressed.
+                ["GameTimings:PromptSeconds"] = "2",
+                ["GameTimings:RevealSeconds"] = "2",
+                ["GameTimings:AccusationSeconds"] = "3",
+                ["GameTimings:VetoSeconds"] = "3",
+                ["GameTimings:PrioritySeconds"] = "2",
+                ["GameTimings:TickMilliseconds"] = "100",
+                ["GameTimings:MaxRounds"] = "8"
             });
         });
 
