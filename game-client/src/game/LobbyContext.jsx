@@ -1,6 +1,7 @@
-import { createContext, useContext, useRef, useState, useCallback, useEffect } from "react";
+import { createContext, useContext, useRef, useState, useCallback } from "react";
 import { buildGameConnection } from "./gameConnection";
 import { measureClockSkew } from "../api/client";
+import { DEFAULT_PACK } from "./packs";
 import { useAuth } from "../auth/AuthContext";
 
 const LobbyContext = createContext(null);
@@ -30,6 +31,10 @@ export function LobbyProvider({ children }) {
   const [ended, setEnded] = useState(null); // { winType, winnerName, aiRealIdentityName, fullTranscript[] }
   const [events, setEvents] = useState([]); // a simple scrolling event log for manual testing
 
+  // Selected prompt pack for this lobby (host picks it pre-start). Seeded from
+  // LobbyUpdated for late joiners, kept live via LobbyOptionsChanged.
+  const [packKey, setPackKey] = useState(DEFAULT_PACK);
+
   // Live per-player token counts, keyed by display name. Seeded from the roster at
   // GameStarted (everyone starts with 3), then adjusted as tokens are spent: a veto
   // costs the vetoer one, elimination means zero. The server never streams a live
@@ -49,15 +54,26 @@ export function LobbyProvider({ children }) {
   }, []);
 
   // Keep the latest token in a ref so accessTokenFactory always reads a fresh one.
+  // Assigned during render (not in an effect) so a join fired immediately after login
+  // — e.g. the guest "join with code" path — always sees the just-set token.
   const tokenRef = useRef(token);
-  useEffect(() => { tokenRef.current = token; }, [token]);
+  tokenRef.current = token;
 
   // Lazily stand up the connection + wire every server→client event on first use.
   const ensureConnected = useCallback(async () => {
     if (!connRef.current) {
       const conn = buildGameConnection(() => tokenRef.current || "");
 
-      conn.on("LobbyUpdated", (state) => setLobby(state));
+      conn.on("LobbyUpdated", (state) => {
+        setLobby(state);
+        // Sync the pack for anyone who joined after the host already picked one.
+        if (state?.packKey) setPackKey(state.packKey);
+      });
+
+      conn.on("LobbyOptionsChanged", (pack) => {
+        setPackKey(pack);
+        log(`pack set to ${pack}`);
+      });
 
       conn.on("GameStarted", (r) => {
         setRoster(r);
@@ -179,6 +195,14 @@ export function LobbyProvider({ children }) {
     await conn.invoke("StartGame");
   }, [ensureConnected]);
 
+  // Host picks the prompt pack pre-start. Optimistically update locally; the server
+  // echoes LobbyOptionsChanged to everyone (including us).
+  const setLobbyOptions = useCallback(async (pack) => {
+    setPackKey(pack);
+    const conn = await ensureConnected();
+    await conn.invoke("SetLobbyOptions", pack);
+  }, [ensureConnected]);
+
   const submitAnswer = useCallback(async (text) => {
     const conn = await ensureConnected();
     await conn.invoke("SubmitAnswer", text);
@@ -212,6 +236,7 @@ export function LobbyProvider({ children }) {
     setEvents([]);
     setHistory([]);
     setTokens({});
+    setPackKey(DEFAULT_PACK);
     if (connRef.current) {
       try { await connRef.current.stop(); } catch { /* ignore */ }
       connRef.current = null;
@@ -223,8 +248,8 @@ export function LobbyProvider({ children }) {
     status, lobby, roster, error, setError,
     round, phase, reveal, accusation, accusationMade,
     vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, events,
-    tokens, clockSkew, history,
-    createLobby, joinLobby, startGame, leaveLobby,
+    tokens, clockSkew, history, packKey,
+    createLobby, joinLobby, startGame, setLobbyOptions, leaveLobby,
     submitAnswer, makeAccusation, useFakeOut,
   };
 

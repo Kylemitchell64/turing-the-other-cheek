@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { useLobby } from "../game/LobbyContext";
+import { PACKS, packFor } from "../game/packs";
 
 export default function LobbyPage() {
   const { user } = useAuth();
-  const { lobby, roster, startGame, leaveLobby } = useLobby();
+  const { lobby, roster, packKey, setLobbyOptions, startGame, leaveLobby } = useLobby();
   const navigate = useNavigate();
 
   const [busy, setBusy] = useState(false);
@@ -28,6 +29,17 @@ export default function LobbyPage() {
   const me = lobby.players.find((p) => p.displayName === myName);
   const amHost = me?.isHost;
   const canStart = lobby.players.length >= 3 && lobby.players.length <= 8;
+
+  const activePack = packFor(packKey);
+
+  const onPickPack = async (key) => {
+    if (key === packKey) return;
+    try {
+      await setLobbyOptions(key);
+    } catch (e) {
+      setErr(e.message || "Couldn't change the pack");
+    }
+  };
 
   const copyCode = async () => {
     try {
@@ -83,6 +95,30 @@ export default function LobbyPage() {
           ))}
         </div>
         <p className="soon">// everyone starts with 3 fake-out tokens</p>
+
+        <div className="pack-picker">
+          <p className="pack-heading">// prompt pack</p>
+          <div className="segmented">
+            {PACKS.map((p) => {
+              const selected = p.key === packKey;
+              const cls = ["seg", selected ? "on" : "", amHost ? "" : "locked"].join(" ").trim();
+              return (
+                <button
+                  key={p.key}
+                  className={cls}
+                  onClick={() => amHost && onPickPack(p.key)}
+                  disabled={!amHost}
+                  aria-pressed={selected}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="pack-desc">{activePack.description}</p>
+          {activePack.ageNote && <p className="pack-age">{activePack.ageNote}</p>}
+          {!amHost && <p className="soon">// the host picks the pack</p>}
+        </div>
 
         {err && <div className="error">{err}</div>}
 
