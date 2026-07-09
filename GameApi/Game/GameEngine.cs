@@ -216,18 +216,7 @@ public class GameEngine : BackgroundService
             try
             {
                 var answer = await _brain.AnswerAsync(ctx, CancellationToken.None);
-                if (answer.Delay > TimeSpan.Zero)
-                    await Task.Delay(answer.Delay);
-
-                lock (lobby.Sync)
-                {
-                    // Only record if we're still in the same prompting round.
-                    if (lobby.State == GameState.Prompting && lobby.RoundNumber == round
-                        && !lobby.Answers.ContainsKey(aiName))
-                    {
-                        RecordAnswer(lobby, aiName, answer.Text, authorUserId: null, isAi: true);
-                    }
-                }
+                await RunAiTypingAndSubmit(lobby, aiName, round, answer.Text, answer.Delay);
             }
             catch (Exception ex)
             {
@@ -236,8 +225,95 @@ public class GameEngine : BackgroundService
         });
     }
 
+    // Drive the AI's fake typing indicator, then submit at the scheduled time. The AI
+    // "starts typing" TypingDuration before its submit instant and "stops" the moment
+    // the answer lands — exactly like a human whose indicator reflects what they sent.
+    // Everything is anchored to absolute UTC instants so a hesitation blip can't drift
+    // the submit time. All broadcasts are the plain PlayerTyping(name, bool) — the same
+    // payload humans produce, so nothing here singles the AI out.
+    private async Task RunAiTypingAndSubmit(Lobby lobby, string aiName, int round, string text, TimeSpan delay)
+    {
+        var rng = Random.Shared;
+        var now = DateTime.UtcNow;
+        var submitAt = now + (delay > TimeSpan.Zero ? delay : TimeSpan.Zero);
+
+        var typingLead = AnswerTiming.TypingDuration(text.Length, rng);
+        var typingStart = submitAt - typingLead;
+        if (typingStart < now) typingStart = now; // short window: start typing right away
+
+        // Optional single hesitation blip: one brief false-start in the dead time before
+        // real typing begins, but only when there's comfortable lead so it reads natural.
+        var leadSecs = (typingStart - now).TotalSeconds;
+        if (leadSecs > 4.0 && rng.NextDouble() < 0.35)
+        {
+            var blipAt = now.AddSeconds(rng.NextDouble() * (leadSecs - 2.5));
+            await SleepUntil(blipAt);
+            if (!await SetAiTyping(lobby, aiName, round, true)) return;
+            await Task.Delay(TimeSpan.FromSeconds(0.6 + rng.NextDouble() * 0.6));
+            if (!await SetAiTyping(lobby, aiName, round, false)) return;
+        }
+
+        await SleepUntil(typingStart);
+        if (!await SetAiTyping(lobby, aiName, round, true)) return;
+
+        await SleepUntil(submitAt);
+
+        var recorded = false;
+        lock (lobby.Sync)
+        {
+            // Only record if we're still in the same prompting round.
+            if (lobby.State == GameState.Prompting && lobby.RoundNumber == round
+                && !lobby.Answers.ContainsKey(aiName))
+            {
+                RecordAnswer(lobby, aiName, text, authorUserId: null, isAi: true);
+                recorded = true;
+            }
+            lobby.TypingNames.Remove(aiName);
+        }
+
+        // Typing stops when the answer is in — same as a human submit. (If the round had
+        // already moved on, EnterRevealing's clear already fired; a redundant false is
+        // harmless.)
+        if (recorded)
+            await _hub.Clients.Group(lobby.Code).SendAsync("PlayerTyping", aiName, false);
+    }
+
+    // Set the AI's typing flag (guarded to the current prompting round) and broadcast it.
+    // Returns false — telling the caller to abort — if the round has moved on.
+    private async Task<bool> SetAiTyping(Lobby lobby, string aiName, int round, bool typing)
+    {
+        bool live;
+        lock (lobby.Sync)
+        {
+            live = lobby.State == GameState.Prompting && lobby.RoundNumber == round
+                && !lobby.Answers.ContainsKey(aiName);
+            if (!live) lobby.TypingNames.Remove(aiName);
+            else if (typing) lobby.TypingNames.Add(aiName);
+            else lobby.TypingNames.Remove(aiName);
+        }
+        if (!live) return false;
+        await _hub.Clients.Group(lobby.Code).SendAsync("PlayerTyping", aiName, typing);
+        return true;
+    }
+
+    private static async Task SleepUntil(DateTime utc)
+    {
+        var wait = utc - DateTime.UtcNow;
+        if (wait > TimeSpan.Zero) await Task.Delay(wait);
+    }
+
     private void EnterRevealing(Lobby lobby, List<Func<Task>> outbound)
     {
+        // Prompting is over — clear every lingering typing indicator (humans still in
+        // the box, or the AI if its task hasn't cleared itself yet) so no bubble sticks.
+        if (lobby.TypingNames.Count > 0)
+        {
+            var code0 = lobby.Code;
+            foreach (var typer in lobby.TypingNames.ToList())
+                outbound.Add(() => _hub.Clients.Group(code0).SendAsync("PlayerTyping", typer, false));
+            lobby.TypingNames.Clear();
+        }
+
         // Anyone who didn't answer (including the AI, if its delay somehow lapsed)
         // gets a blank so the reveal has an entry for every seat.
         EnsureAnswerFor(lobby, lobby.AiDisplayName!, isAi: true);

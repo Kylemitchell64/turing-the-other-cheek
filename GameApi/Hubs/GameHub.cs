@@ -211,6 +211,39 @@ public class GameHub : Hub
         await Clients.Caller.SendAsync("AnswerAccepted", lobby.RoundNumber);
     }
 
+    // Set this player's typing state. Clients fire it on answer-box focus/non-empty and
+    // clear it on blur/empty, throttled to state changes. The server re-broadcasts
+    // PlayerTyping(displayName, isTyping) to the lobby, but ONLY during Prompting, and
+    // ONLY for a player who hasn't answered yet (an answered player's podium goes
+    // neutral even if they keep typing). The AI's identical fake indicator is driven by
+    // the engine — nothing here (or in the payload) distinguishes it.
+    public async Task SetTyping(bool isTyping)
+    {
+        var lobby = FindLobbyForCaller();
+        if (lobby == null) return; // no lobby / mid-transition: silently ignore
+
+        string? name = null;
+        var changed = false;
+        var effective = false;
+        lock (lobby.Sync)
+        {
+            if (lobby.State != GameState.Prompting) return; // typing only matters while prompting
+
+            var me = lobby.FindPlayer(UserId);
+            if (me == null) return;
+
+            name = me.DisplayName;
+            // An answered player never shows as typing.
+            effective = isTyping && !lobby.Answers.ContainsKey(name);
+            changed = effective
+                ? lobby.TypingNames.Add(name)
+                : lobby.TypingNames.Remove(name);
+        }
+
+        if (changed && name != null)
+            await Clients.Group(lobby.Code).SendAsync("PlayerTyping", name, effective);
+    }
+
     // Accuse one player of being the AI. Eligibility: has tokens, not eliminated,
     // respects the veto-cooldown priority window. First accusation locks the window.
     public async Task MakeAccusation(string accusedName)

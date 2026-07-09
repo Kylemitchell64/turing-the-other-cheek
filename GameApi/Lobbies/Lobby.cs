@@ -61,6 +61,11 @@ public class Lobby
     // double-fire it on subsequent ticks.
     public bool AiAnswerRequested { get; set; }
 
+    // Who's currently shown as "typing" this round (display names, humans + the AI).
+    // Humans join/leave via the SetTyping hub method; the AI's fake-typing task adds
+    // and removes itself. Cleared at phase end so no bubble lingers past Prompting.
+    public HashSet<string> TypingNames { get; } = new(StringComparer.Ordinal);
+
     // Per-lobby AI state that persists across rounds: the timing anti-pattern memory
     // (last 3 delays) and the fallback used-set + count. Reset each new game.
     public AnswerTiming.State TimingState { get; private set; } = new();
@@ -120,6 +125,7 @@ public class Lobby
         RoundPrompts.Clear();
         Transcript.Clear();
         AiAnswerRequested = false;
+        TypingNames.Clear();
         TimingState = new();
         FallbackState = new();
         StyleSummaries.Clear();

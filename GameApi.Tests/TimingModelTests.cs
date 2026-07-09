@@ -77,6 +77,27 @@ public class TimingModelTests
     }
 
     [Fact]
+    public void TypingDuration_HasAPlausibleFloorAndScalesWithLength()
+    {
+        var rng = new Random(1);
+        // Never instant: a short answer still leads with at least ~2s of "typing".
+        for (var i = 0; i < 200; i++)
+        {
+            var d = AnswerTiming.TypingDuration(3, rng);
+            Assert.True(d >= TimeSpan.FromSeconds(2.0),
+                $"short answer typing lead {d.TotalSeconds}s under the 2s floor");
+            Assert.True(d <= TimeSpan.FromSeconds(4.0), "short answer lead unexpectedly long");
+        }
+        // A long answer takes visibly longer to "type" than a short one.
+        var shortAvg = Enumerable.Range(0, 200)
+            .Average(_ => AnswerTiming.TypingDuration(5, rng).TotalSeconds);
+        var longAvg = Enumerable.Range(0, 200)
+            .Average(_ => AnswerTiming.TypingDuration(140, rng).TotalSeconds);
+        Assert.True(longAvg > shortAvg + 5.0,
+            $"long answers ({longAvg:F1}s) should type longer than short ones ({shortAvg:F1}s)");
+    }
+
+    [Fact]
     public void ShortWindow_StillNeverExceedsDeadline()
     {
         // Compressed test-style window (2s): delay clamps into the window, may be < 4s

@@ -71,6 +71,18 @@ public static class AnswerTiming
         return TimeSpan.FromSeconds(delay);
     }
 
+    // How long the AI should appear to be "typing" before it submits — the lead time
+    // for its fake typing indicator. Mirrors the typing-floor idea (length / 7, min 2s)
+    // plus a little jitter so the lead is never metronomic. This only drives the
+    // PlayerTyping bubble; the actual submit delay still comes from ComputeDelay. A
+    // human's indicator reflects exactly what they typed, so the AI reusing the same
+    // floor math keeps it indistinguishable.
+    public static TimeSpan TypingDuration(int answerLength, Random rng)
+    {
+        var secs = Math.Max(2.0, answerLength / 7.0) + rng.NextDouble() * 1.5;
+        return TimeSpan.FromSeconds(secs);
+    }
+
     private enum Half { Low, High }
 
     // If the last 3 recorded delays are all within +-3s of each other, force the next
