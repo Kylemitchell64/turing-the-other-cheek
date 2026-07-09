@@ -125,6 +125,11 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddScoped<DatabaseHealthCheck>();
 
+// OAuth (Google + GitHub), feature-flagged: a provider is only "on" when both its
+// client id + secret are configured. Plain HTTP code exchange, no provider SDKs.
+builder.Services.AddHttpClient("oauth", c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddSingleton<GameApi.Auth.OAuthService>();
+
 // Realtime: SignalR + the process-wide in-memory lobby store.
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<LobbyStore>();

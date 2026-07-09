@@ -20,6 +20,12 @@ public class GameContext : IdentityDbContext<ApplicationUser>
     {
         base.OnModelCreating(builder);
 
+        builder.Entity<ApplicationUser>(e =>
+        {
+            // OAuth find-or-create looks users up by (provider, external id).
+            e.HasIndex(u => new { u.ExternalProvider, u.ExternalId });
+        });
+
         builder.Entity<StyleProfile>(e =>
         {
             e.Property(p => p.SummaryJson).HasColumnType("jsonb");

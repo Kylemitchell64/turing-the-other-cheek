@@ -23,6 +23,14 @@ public class LoginRequest
     public string Password { get; set; } = default!;
 }
 
+public class GuestLoginRequest
+{
+    // Validated in the controller (3-20 chars, alphanumeric + underscore) so we can
+    // return a friendly single error instead of a model-state blob.
+    [Required]
+    public string Username { get; set; } = default!;
+}
+
 public class AuthResponse
 {
     public string Token { get; set; } = default!;

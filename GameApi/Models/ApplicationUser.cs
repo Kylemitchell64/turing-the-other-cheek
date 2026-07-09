@@ -5,4 +5,13 @@ namespace GameApi.Models;
 public class ApplicationUser : IdentityUser
 {
     public string? DisplayName { get; set; }
+
+    // Guest accounts: created from just a username, no password. Same username later
+    // resolves to the same account so the AI keeps learning that player's style.
+    public bool IsGuest { get; set; }
+
+    // OAuth accounts: which provider ("Google" | "GitHub") and that provider's stable
+    // user id. Null for password + guest accounts. Together they find-or-create on login.
+    public string? ExternalProvider { get; set; }
+    public string? ExternalId { get; set; }
 }
