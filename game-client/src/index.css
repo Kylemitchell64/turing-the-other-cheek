@@ -143,6 +143,60 @@ button.ghost:disabled {
   cursor: not-allowed;
 }
 
+/* Guest play is the headline action — bigger, uppercase, extra glow. */
+button.primary.big {
+  padding: 1rem;
+  font-size: 1.05rem;
+  letter-spacing: 0.08em;
+  text-transform: none;
+  box-shadow: 0 0 12px var(--neon-dim);
+}
+
+/* Login auth-path separators + OAuth button stack. */
+.oauth {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--neon-dim);
+  font-size: 0.8rem;
+  margin: 0.6rem 0;
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  border-bottom: 1px solid var(--neon-dim);
+  opacity: 0.5;
+}
+
+.divider span {
+  padding: 0 0.6rem;
+  text-transform: lowercase;
+}
+
+button.link {
+  background: none;
+  border: none;
+  color: var(--neon-dim);
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-transform: lowercase;
+  text-decoration: underline;
+  padding: 0.2rem;
+}
+
+button.link:hover {
+  color: var(--neon);
+}
+
 .error {
   color: var(--danger);
   font-size: 0.85rem;

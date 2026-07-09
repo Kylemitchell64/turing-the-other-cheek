@@ -36,6 +36,25 @@ export function AuthProvider({ children }) {
     return data;
   }, []);
 
+  // Guest login: username only, no password. Same name later resumes the same account.
+  const guestLogin = useCallback(async (username) => {
+    const res = await fetch(`${API_BASE}/api/auth/guest`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || (data.errors && data.errors[0]) || "Guest login failed");
+    }
+    const data = await res.json();
+    setToken(data.token);
+    return data;
+  }, []);
+
+  // Drop a JWT straight in (OAuth callback hands us one via the URL fragment).
+  const applyToken = useCallback((t) => setToken(t), []);
+
   const register = useCallback(async (username, displayName, password) => {
     const res = await fetch(`${API_BASE}/api/auth/register`, {
       method: "POST",
@@ -56,7 +75,7 @@ export function AuthProvider({ children }) {
   const user = token && !isTokenExpired(token) ? parseJwt(token) : null;
 
   return (
-    <AuthContext.Provider value={{ token, user, login, register, logout, apiBase: API_BASE }}>
+    <AuthContext.Provider value={{ token, user, login, register, guestLogin, applyToken, logout, apiBase: API_BASE }}>
       {children}
     </AuthContext.Provider>
   );
