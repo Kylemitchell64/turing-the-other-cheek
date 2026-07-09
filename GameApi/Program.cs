@@ -85,8 +85,9 @@ builder.Services.AddAuthentication(o =>
 });
 
 // Rate limiter: fixed window 30 req/min per IP. Permit count is config-driven so
-// the integration test suite (which hammers /api/auth/register) can raise it.
-var rateLimitPermits = builder.Configuration.GetValue<int?>("RateLimit:PermitsPerMinute") ?? 30;
+// the integration test suite (which hammers /api/auth/register) can raise it. Must be
+// read at request time, not startup — top-level reads run before the test factory's
+// config overrides land (same trap GameTimings hit).
 builder.Services.AddRateLimiter(o =>
 {
     o.GlobalLimiter = System.Threading.RateLimiting.PartitionedRateLimiter.Create<HttpContext, string>(context =>
@@ -97,11 +98,13 @@ builder.Services.AddRateLimiter(o =>
         if (context.Request.Path.StartsWithSegments("/hubs"))
             return System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter("hub");
 
+        var permits = context.RequestServices.GetRequiredService<IConfiguration>()
+            .GetValue<int?>("RateLimit:PermitsPerMinute") ?? 30;
         return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
             partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
             factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
             {
-                PermitLimit = rateLimitPermits,
+                PermitLimit = permits,
                 Window = TimeSpan.FromMinutes(1)
             });
     });

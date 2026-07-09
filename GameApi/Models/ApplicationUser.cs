@@ -14,4 +14,10 @@ public class ApplicationUser : IdentityUser
     // user id. Null for password + guest accounts. Together they find-or-create on login.
     public string? ExternalProvider { get; set; }
     public string? ExternalId { get; set; }
+
+    // The player's saved character (phase 12 creator), stored as the same JSON the
+    // client sprite system reads: {"base","hair","outfit","accessory"}. Null == they
+    // never opened the creator, so they get the deterministic name-hash default. Guests
+    // persist by username, so the same guest name later resumes the same character.
+    public string? CharacterJson { get; set; }
 }

@@ -28,9 +28,9 @@ public class TestAppFactory : WebApplicationFactory<Program>
                 // Tests always use the mock brain — never hit the real Gemini API, even
                 // if a GEMINI_API_KEY happens to be set in this environment.
                 ["Ai:Brain"] = "Mock",
-                // TestServer sees every request as one IP; raise the limit so the
-                // suite's many registrations don't trip the 429.
-                ["RateLimit:PermitsPerMinute"] = "1000",
+                // TestServer sees every request as one IP; raise the limit high so the
+                // suite's many registrations (all in one fixed window) don't trip the 429.
+                ["RateLimit:PermitsPerMinute"] = "100000",
                 // Tiny round timings so the full playtest (multiple rounds, veto,
                 // cooldown, priority) runs in seconds instead of minutes. All the
                 // state-machine logic is identical; only the clocks are compressed.

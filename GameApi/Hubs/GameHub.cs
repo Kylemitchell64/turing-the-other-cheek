@@ -1,6 +1,9 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.EntityFrameworkCore;
+using GameApi.Characters;
+using GameApi.Data;
 using GameApi.GameLoop;
 using GameApi.Lobbies;
 using GameApi.Models;
@@ -18,12 +21,14 @@ public class GameHub : Hub
 
     private readonly LobbyStore _store;
     private readonly GameEngine _engine;
+    private readonly GameContext _db;
     private readonly ILogger<GameHub> _logger;
 
-    public GameHub(LobbyStore store, GameEngine engine, ILogger<GameHub> logger)
+    public GameHub(LobbyStore store, GameEngine engine, GameContext db, ILogger<GameHub> logger)
     {
         _store = store;
         _engine = engine;
+        _db = db;
         _logger = logger;
     }
 
@@ -40,10 +45,11 @@ public class GameHub : Hub
     public async Task CreateLobby()
     {
         var lobby = _store.Create(UserId);
+        var characterJson = await LoadCharacterJsonAsync(UserId);
 
         lock (lobby.Sync)
         {
-            var player = new LobbyPlayer { UserId = UserId, DisplayName = DisplayName };
+            var player = new LobbyPlayer { UserId = UserId, DisplayName = DisplayName, CharacterJson = characterJson };
             player.ConnectionIds.Add(Context.ConnectionId);
             lobby.Players.Add(player);
         }
@@ -59,6 +65,7 @@ public class GameHub : Hub
     {
         code = (code ?? "").Trim().ToUpperInvariant();
         var lobby = _store.Get(code) ?? throw new HubException("No lobby with that code");
+        var characterJson = await LoadCharacterJsonAsync(UserId);
 
         lock (lobby.Sync)
         {
@@ -72,10 +79,11 @@ public class GameHub : Hub
             if (existing != null)
             {
                 existing.ConnectionIds.Add(Context.ConnectionId);
+                existing.CharacterJson = characterJson; // pick up any edits since they last joined
             }
             else
             {
-                var player = new LobbyPlayer { UserId = UserId, DisplayName = DisplayName };
+                var player = new LobbyPlayer { UserId = UserId, DisplayName = DisplayName, CharacterJson = characterJson };
                 player.ConnectionIds.Add(Context.ConnectionId);
                 lobby.Players.Add(player);
             }
@@ -128,11 +136,15 @@ public class GameHub : Hub
             var aiName = _store.PickAiName(lobby.Players.Select(p => p.DisplayName));
             lobby.AiDisplayName = aiName;
 
-            // Build roster: humans + AI, then shuffle so the AI isn't last.
+            // Build roster: humans + AI, then shuffle so the AI isn't last. Every seat
+            // carries a character — a human's saved config, else their name-hash default;
+            // the AI gets the same name-hash default of its fake name, so it's
+            // indistinguishable even when everyone else has fully customized.
             var entries = lobby.Players
-                .Select(p => new RosterEntryDto(p.DisplayName, p.TokensRemaining))
+                .Select(p => new RosterEntryDto(
+                    p.DisplayName, p.TokensRemaining, CharacterDefaults.Resolve(p.CharacterJson, p.DisplayName)))
                 .ToList();
-            entries.Add(new RosterEntryDto(aiName, 3));
+            entries.Add(new RosterEntryDto(aiName, 3, CharacterDefaults.FromName(aiName)));
 
             roster = ShuffleAiNotLast(entries, aiName);
 
@@ -357,6 +369,25 @@ public class GameHub : Hub
 
     // --- helpers ---
 
+    // Best-effort read of this user's saved character JSON, cached onto their seat.
+    // A DB hiccup just returns null → the roster falls back to the name-hash default,
+    // so a missing DB never blocks joining a lobby.
+    private async Task<string?> LoadCharacterJsonAsync(string userId)
+    {
+        try
+        {
+            return await _db.Users
+                .Where(u => u.Id == userId)
+                .Select(u => u.CharacterJson)
+                .FirstOrDefaultAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Loading character for {User} failed", userId);
+            return null;
+        }
+    }
+
     private async Task BroadcastLobby(Lobby lobby)
     {
         LobbyStateDto dto;
@@ -364,7 +395,8 @@ public class GameHub : Hub
         {
             var players = lobby.Players
                 .Select(p => new LobbyPlayerDto(
-                    p.DisplayName, p.TokensRemaining, p.IsConnected, p.UserId == lobby.HostUserId))
+                    p.DisplayName, p.TokensRemaining, p.IsConnected, p.UserId == lobby.HostUserId,
+                    CharacterDefaults.Resolve(p.CharacterJson, p.DisplayName)))
                 .ToList();
             dto = new LobbyStateDto(lobby.Code, lobby.State.ToString(), players, lobby.PackKey);
         }

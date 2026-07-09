@@ -177,6 +177,11 @@ public class LobbyPlayer
     public string UserId { get; init; } = default!;
     public string DisplayName { get; init; } = default!;
 
+    // The player's saved character JSON, cached from the DB when they take a seat, so the
+    // roster payloads can carry a config without a DB hit per broadcast. Null == none
+    // saved (or the DB was unreachable) → the name-hash default is used instead.
+    public string? CharacterJson { get; set; }
+
     // A player can hold multiple connections briefly (reconnect before the old
     // socket times out). Empty set == currently disconnected.
     public HashSet<string> ConnectionIds { get; } = new();
