@@ -167,6 +167,7 @@ export default function GamePage() {
         <EndScreen
           ended={ended}
           myName={myName}
+          roster={roster}
           iWasFooled={wrongAccusers.includes(myName)}
           onRematch={onRematch}
           onLeave={onLeave}
@@ -190,6 +191,7 @@ export default function GamePage() {
               <Podium
                 key={p.displayName}
                 name={p.displayName}
+                config={p.character}
                 state={podiumState(p.displayName)}
                 isMe={p.displayName === myName}
                 tokens={tokens[p.displayName] ?? p.tokensRemaining}
@@ -360,7 +362,7 @@ export default function GamePage() {
 
 // End screen: winner banner, AI reveal, transcript with the AI's lines highlighted,
 // this player's stat deltas, and a rematch button (host restarts the same lobby).
-function EndScreen({ ended, myName, iWasFooled, onRematch, onLeave, msg }) {
+function EndScreen({ ended, myName, roster, iWasFooled, onRematch, onLeave, msg }) {
   const detector = ended.winType === "Detector";
   const iWon = detector && ended.winnerName === myName;
 
@@ -377,6 +379,7 @@ function EndScreen({ ended, myName, iWasFooled, onRematch, onLeave, msg }) {
   // Center-stage winner: the detector on a catch, or the AI itself when it survives
   // (its identity is already revealed on this screen, so a victory loop is fair game).
   const championName = detector ? ended.winnerName : ended.aiRealIdentityName;
+  const championConfig = roster?.find((p) => p.displayName === championName)?.character;
 
   return (
     <div className="panel end">
@@ -384,7 +387,7 @@ function EndScreen({ ended, myName, iWasFooled, onRematch, onLeave, msg }) {
         <h1 className="glow">{detector ? "[ DETECTOR WINS ]" : "[ THE AI SURVIVES ]"}</h1>
         {championName && (
           <div className="champion">
-            <Podium name={championName} state="victorious" size={84} tokens={0} />
+            <Podium name={championName} config={championConfig} state="victorious" size={84} tokens={0} />
           </div>
         )}
         <p className="tagline">

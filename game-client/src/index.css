@@ -1096,3 +1096,116 @@ button.danger-btn {
   font-size: 0.78rem;
   color: var(--text);
 }
+
+/* --- character creator (phase 12) --- */
+.panel.creator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.creator-stage {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  min-height: 170px;
+  margin: 0.4rem 0 0.2rem;
+}
+
+.creator-who {
+  font-size: 0.9rem;
+  color: var(--muted);
+  letter-spacing: 0.5px;
+  margin-bottom: 0.6rem;
+}
+.creator-who b { color: var(--neon); }
+
+.layers {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  width: 100%;
+  margin-bottom: 0.9rem;
+}
+
+.layer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border: 1px solid var(--neon-dim);
+  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
+}
+
+.layer-label {
+  font-size: 0.8rem;
+  letter-spacing: 1px;
+  color: var(--neon);
+}
+
+.layer-cycler {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+button.layer-arrow {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  font-size: 1.05rem;
+  line-height: 1;
+  background: transparent;
+  color: var(--neon);
+  border: 1px solid var(--neon-dim);
+  border-radius: 6px;
+  cursor: pointer;
+}
+button.layer-arrow:hover:not(:disabled) {
+  border-color: var(--neon);
+  box-shadow: 0 0 8px var(--neon-dim);
+}
+button.layer-arrow:disabled { opacity: 0.4; cursor: default; }
+
+.layer-val {
+  min-width: 4.5rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+/* --- home "what is this?" bio panel --- */
+.panel.about {
+  margin-top: 0.9rem;
+  padding: 0.6rem 1rem;
+}
+
+button.about-toggle {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0.3rem 0;
+  color: var(--neon);
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.about-caret { color: var(--muted); }
+
+.about-body {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.about-body p {
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+.about-foot { color: var(--muted); }

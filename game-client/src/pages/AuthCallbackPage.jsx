@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { needsCreator } from "../auth/firstUse";
+
+function decodeJwt(token) {
+  try {
+    return JSON.parse(atob(token.split(".")[1]));
+  } catch {
+    return null;
+  }
+}
 
 // Landing spot for the OAuth redirect. The API sends the browser here with the JWT (or
 // an error) in the URL fragment: /auth/callback#token=... . We parse it, store the token
@@ -32,7 +41,12 @@ export default function AuthCallbackPage() {
 
     if (token) {
       applyToken(token);
-      navigate("/", { replace: true });
+      // First-use: route new OAuth users to the creator before Home.
+      const claims = decodeJwt(token);
+      const identity = claims?.displayName || claims?.unique_name;
+      needsCreator(token, identity)
+        .then((needs) => navigate(needs ? "/character" : "/", { replace: true }))
+        .catch(() => navigate("/", { replace: true }));
     } else {
       setError(ERRORS[err] || "sign-in failed");
     }

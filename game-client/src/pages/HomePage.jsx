@@ -12,6 +12,7 @@ export default function HomePage() {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [showAbout, setShowAbout] = useState(false);
 
   const onCreate = async () => {
     setErr(null);
@@ -61,6 +62,7 @@ export default function HomePage() {
             <button className="ghost" onClick={() => { setJoining(true); setErr(null); }} disabled={busy}>
               join by code
             </button>
+            <button className="ghost" onClick={() => navigate("/character", { state: { edit: true } })} disabled={busy}>edit character</button>
             <button className="ghost" onClick={() => navigate("/stats")} disabled={busy}>my stats</button>
             <button className="ghost" onClick={() => navigate("/samples")} disabled={busy}>writing samples</button>
           </div>
@@ -82,6 +84,39 @@ export default function HomePage() {
               back
             </button>
           </form>
+        )}
+      </div>
+
+      <div className="panel about">
+        <button
+          type="button"
+          className="about-toggle"
+          onClick={() => setShowAbout((s) => !s)}
+          aria-expanded={showAbout}
+        >
+          [ WHAT IS THIS? ] <span className="about-caret">{showAbout ? "−" : "+"}</span>
+        </button>
+        {showAbout && (
+          <div className="about-body">
+            <p>
+              back in 1950 Alan Turing asked a simple question: could a machine hold a
+              text conversation well enough that you couldn't tell it apart from a person?
+              he called it the imitation game. no robots, no sci-fi, just words on a
+              screen and one job: figure out who's real.
+            </p>
+            <p>
+              that's this game, except the machine is sitting in your group chat. every
+              lobby has one AI player wearing a normal name, answering the same dumb
+              prompts you are. and it's been reading how you and your friends actually
+              type, so it blends. your job is to catch it before it outlasts everyone.
+            </p>
+            <p>
+              "turning the other cheek" is supposed to be about letting things slide.
+              we are doing the exact opposite. nobody here is forgiving anybody. we're
+              hunting the imposter, and if you guess wrong it costs you.
+            </p>
+            <p className="about-foot">// pick a name, grab some friends, find the machine.</p>
+          </div>
         )}
       </div>
     </div>

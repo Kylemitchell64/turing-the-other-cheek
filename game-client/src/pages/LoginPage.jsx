@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { useLobby } from "../game/LobbyContext";
+import { needsCreator } from "../auth/firstUse";
 
 export default function LoginPage() {
   const { login, register, guestLogin, apiBase } = useAuth();
@@ -37,8 +38,14 @@ export default function LoginPage() {
     setError(null);
     setBusy(true);
     try {
-      await guestLogin(guestName.trim());
+      const data = await guestLogin(guestName.trim());
       const code = guestCode.trim().toUpperCase();
+      // First-use: brand-new player with no saved character → make one first, stashing
+      // the pending lobby code so it auto-joins after they save/skip.
+      if (await needsCreator(data.token, data.displayName || data.username)) {
+        navigate("/character", { state: { pendingCode: code || null } });
+        return;
+      }
       if (code) {
         // Auto-join straight into the lobby via the existing join flow. The hub's
         // accessTokenFactory is lazy, so it reads the just-set guest token on connect.
@@ -59,10 +66,12 @@ export default function LoginPage() {
     setError(null);
     setBusy(true);
     try {
-      if (mode === "login") {
-        await login(username.trim(), password);
-      } else {
-        await register(username.trim(), displayName.trim(), password);
+      const data = mode === "login"
+        ? await login(username.trim(), password)
+        : await register(username.trim(), displayName.trim(), password);
+      if (await needsCreator(data.token, data.displayName || data.username)) {
+        navigate("/character");
+        return;
       }
       navigate("/");
     } catch (err) {

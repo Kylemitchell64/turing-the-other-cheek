@@ -3,6 +3,7 @@ import ProtectedRoute from "./auth/ProtectedRoute";
 import LoginPage from "./pages/LoginPage";
 import AuthCallbackPage from "./pages/AuthCallbackPage";
 import HomePage from "./pages/HomePage";
+import CharacterCreatorPage from "./pages/CharacterCreatorPage";
 import LobbyPage from "./pages/LobbyPage";
 import GamePage from "./pages/GamePage";
 import WritingSamplesPage from "./pages/WritingSamplesPage";
@@ -18,6 +19,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <HomePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/character"
+        element={
+          <ProtectedRoute>
+            <CharacterCreatorPage />
           </ProtectedRoute>
         }
       />

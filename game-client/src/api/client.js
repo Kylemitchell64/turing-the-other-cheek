@@ -36,6 +36,9 @@ export const api = {
   addSample: (token, text) => request("/api/samples", { method: "POST", token, body: { text } }),
   deleteSample: (token, id) => request(`/api/samples/${id}`, { method: "DELETE", token }),
   getStats: (token) => request("/api/stats/me", { token }),
+  // Character: GET returns the saved config or null; PUT saves it (server validates).
+  getCharacter: (token) => request("/api/profile/character", { token }),
+  putCharacter: (token, config) => request("/api/profile/character", { method: "PUT", token, body: config }),
 };
 
 // Estimate client clock skew (ms) vs the server using the HTTP Date response header,
