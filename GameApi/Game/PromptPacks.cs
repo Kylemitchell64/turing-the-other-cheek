@@ -1,0 +1,207 @@
+using System.Security.Cryptography;
+
+namespace GameApi.GameLoop;
+
+// A themed set of round prompts the host can pick before starting. FAMILY keeps the
+// original 60 casual prompts; ADULT / DRINKING / TRIVIA are the phase-10 additions.
+// Nothing here ever mentions the AI — the pack is host-driven and safe to broadcast.
+public record PromptPack(string Key, string DisplayName, string Label, string Description, string[] Prompts);
+
+public static class PromptPacks
+{
+    public const string DefaultKey = "family";
+
+    // FAMILY reuses the existing 60-prompt casual pool (AI-DESIGN section 5) so the
+    // default game is unchanged. The other three are new.
+    public static readonly PromptPack Family = new(
+        Key: "family",
+        DisplayName: "Family",
+        Label: "FAMILY",
+        Description: "keep it clean. party prompts anyone can answer.",
+        Prompts: PromptPool.Prompts);
+
+    // Dirty-joke party tier: innuendo, embarrassing confessions, dating/hookup
+    // misadventures. Crude R-rated humor, nothing explicit or graphic.
+    public static readonly PromptPack Adult = new(
+        Key: "adult",
+        DisplayName: "Adult",
+        Label: "ADULT 18+",
+        Description: "18+ // crude party humor, innuendo and confessions. keep it playful.",
+        Prompts: new[]
+        {
+            "the last text you'd be mortified for your mom to read",
+            "worst pickup line you've ever used or had used on you",
+            "your most embarrassing drunk hookup story in one line",
+            "the ick that instantly ends it for you",
+            "worst place you've ever hooked up",
+            "a dating app red flag you swipe left on instantly",
+            "the most unhinged thing in your search history",
+            "rate your walk of shame outfit out of 10",
+            "worst thing you've done to avoid a second date",
+            "the pettiest reason you ever ghosted someone",
+            "the least sexy thing that somehow does it for you",
+            "worst nickname a partner ever gave you",
+            "a lie you told to get out of a hookup",
+            "the horniest decision you made completely sober",
+            "your go-to move that works way too often",
+            "worst sext you've ever sent or received",
+            "the most embarrassing thing you own that a date could find",
+            "how many exes are still in your phone and why",
+            "the wildest thing you'd do for the right person",
+            "your most shameful 2am text recipient",
+            "worst thing you've faked to spare someone's feelings",
+            "the thing you'll admit to only in vague terms",
+            "a hookup that ended in pure disaster, go",
+            "the thirstiest thing you've done on the internet",
+            "worst thing a partner ever caught you doing",
+            "your dealbreaker that's honestly kind of shallow",
+            "the most desperate you've ever been on a dating app",
+            "a confession that would ruin your reputation in this room",
+            "the most embarrassing noise you've ever made in the moment",
+            "your type in 3 words (be honest and a little gross)",
+            "the dumbest thing you've done to impress a crush",
+            "worst wingman fail you witnessed or committed",
+            "the weird thing you're unexpectedly into",
+            "your most regrettable ex in one word",
+            "worst thing you've said mid-hookup by accident",
+            "the group chat secret you swore you'd never tell",
+            "how you actually rate yourself in bed (be delusional)",
+            "the flirting attempt that crashed and burned hardest",
+            "worst place you've ever been caught making out",
+            "the most on-brand reason you got left on read",
+        });
+
+    // "Everyone who X drinks", never-have-I-ever, dares tied to answers. Description
+    // carries the standing responsible-drinking line.
+    public static readonly PromptPack Drinking = new(
+        Key: "drinking",
+        DisplayName: "Drinking",
+        Label: "DRINKING 21+",
+        Description: "21+ // never-have-i-ever and dares. drink responsibly, know your limits, never drink and drive.",
+        Prompts: new[]
+        {
+            "never have i ever blacked out and lost my phone (story or drink)",
+            "everyone who's texted an ex after midnight drinks - whats the text",
+            "the drunkest decision you ever fully committed to",
+            "never have i ever thrown up in an uber (confess or drink)",
+            "everyone who's been cut off by a bartender drinks - why",
+            "your most reliable drunk food order",
+            "never have i ever forgotten someone's name mid conversation (drink)",
+            "the worst hangover you've earned and how",
+            "everyone who's cried at a bar drinks - what set you off",
+            "your party trick that only works after a few",
+            "never have i ever woken up somewhere i didnt recognize",
+            "the dare you'd actually do right now for a free drink",
+            "everyone who's been the drunkest in the room drinks - own it",
+            "your go-to shot and the memory attached to it",
+            "never have i ever sent a text i couldnt take back (drink)",
+            "the most money you've spent on a night you barely remember",
+            "everyone who's fallen asleep at a party drinks - where",
+            "your worst 'im never drinking again' moment",
+            "never have i ever made a 2am purchase i regret (drink)",
+            "the drink that ruined you and you'll never touch again",
+            "everyone who's texted the group chat something unhinged drinks",
+            "the dumbest thing you've done to win a bet at a bar",
+            "never have i ever started a tab i regret (drink)",
+            "your karaoke pick after exactly 4 drinks",
+            "the loudest secret you've spilled while drunk",
+            "everyone who's been carried home drinks - by who",
+            "your most confident drunk plan that made no sense",
+            "never have i ever fought over the aux drunk (drink)",
+            "the worst wingman moment you caused after a few",
+            "name a dare for the person to your left",
+            "everyone who's woken up still in their shoes drinks",
+            "your drunk-texting hall of fame recipient",
+            "never have i ever snuck a drink somewhere i shouldnt",
+            "the pettiest drunk argument you've ever had",
+            "your most 'that was a mistake' morning-after moment",
+            "everyone who's lost a shoe on a night out drinks",
+            "the dare that ended a party early - whats yours",
+            "never have i ever faked being sober for someone (drink)",
+            "your bar tab horror story in one line",
+            "everyone who's closed down a bar drinks - last one out?",
+        });
+
+    // Obscure-ish general knowledge where most people are guessing. Phrased so
+    // confident bullshitting feels natural.
+    public static readonly PromptPack Trivia = new(
+        Key: "trivia",
+        DisplayName: "Trivia",
+        Label: "TRIVIA",
+        Description: "obscure general knowledge. no googling, commit to your guess.",
+        Prompts: new[]
+        {
+            "whats the capital of kazakhstan (no googling, commit to your guess)",
+            "how many bones are in the human body (confident number only)",
+            "what year did the berlin wall fall (guess, dont overthink it)",
+            "name the longest river in the world (first answer that pops up)",
+            "what element has the symbol W (just say something)",
+            "how many countries are in africa (rough number, commit)",
+            "who painted the girl with a pearl earring (no cheating)",
+            "which planet is the hottest in the solar system (obvious right?)",
+            "whats the smallest country in the world (guess confidently)",
+            "how tall is mount everest in feet (ballpark it)",
+            "what language has the most native speakers (commit)",
+            "who was first to reach the south pole (a name, any name)",
+            "what year did the first iphone come out (guess)",
+            "whats the currency of thailand (say it like you know)",
+            "how many hearts does an octopus have (number, go)",
+            "what does the www in a web address stand for (all three words)",
+            "which planet has the most moons (pick one and commit)",
+            "whats the largest desert in the world (careful, its a trick)",
+            "how many time zones does russia have (guess)",
+            "who wrote the odyssey (name drop confidently)",
+            "what year did the titanic sink (commit to a year)",
+            "whats the hardest natural substance on earth (obvious? maybe)",
+            "name the capital of australia (bet you get it wrong)",
+            "how many keys are on a standard piano (exact number, guess)",
+            "what gas do plants absorb from the air (basic but commit)",
+            "whats the most abundant element in the universe (go)",
+            "who is credited with inventing the telephone (a name, quickly)",
+            "how far is the moon from earth in miles (ballpark)",
+            "which country has the most pyramids (its a trick)",
+            "whats the national animal of scotland (this one's absurd, guess anyway)",
+            "how many players are on a cricket team (number)",
+            "what year did world war one start (commit)",
+            "whats the deepest ocean trench called (say something)",
+            "which vitamin do you get from sunlight (easy? prove it)",
+            "who discovered penicillin (name it fast)",
+            "whats the capital of canada (not the obvious one)",
+            "how many chambers are in the human heart (number, go)",
+            "whats the fastest land animal (confident answer)",
+            "how many moons does mars have (exact number, guess)",
+            "whats the tallest animal in the world (dont overthink it)",
+        });
+
+    public static readonly IReadOnlyList<PromptPack> All = new[] { Family, Adult, Drinking, Trivia };
+
+    private static readonly Dictionary<string, PromptPack> ByKey =
+        All.ToDictionary(p => p.Key, StringComparer.Ordinal);
+
+    public static bool IsValidKey(string? key) => key != null && ByKey.ContainsKey(key);
+
+    // Look up a pack, falling back to FAMILY for an unknown/null key so a bad value
+    // can never crash a round.
+    public static PromptPack Get(string? key) =>
+        key != null && ByKey.TryGetValue(key, out var pack) ? pack : Family;
+
+    // Pick a prompt from the pack that hasn't been used yet this game. usedIndices is
+    // per-game state on the lobby; when the pack is exhausted we clear it and start
+    // over (rare — packs are 40-60 deep, games are <=8 rounds).
+    public static string PickPrompt(string key, HashSet<int> usedIndices)
+    {
+        var prompts = Get(key).Prompts;
+        if (usedIndices.Count >= prompts.Length)
+            usedIndices.Clear();
+
+        int idx;
+        do
+        {
+            idx = RandomNumberGenerator.GetInt32(prompts.Length);
+        }
+        while (usedIndices.Contains(idx));
+
+        usedIndices.Add(idx);
+        return prompts[idx];
+    }
+}

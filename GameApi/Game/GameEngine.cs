@@ -153,7 +153,7 @@ public class GameEngine : BackgroundService
     {
         lobby.RoundNumber = roundNumber;
         lobby.State = GameState.Prompting;
-        lobby.CurrentPrompt = PromptPool.Random();
+        lobby.CurrentPrompt = PromptPacks.PickPrompt(lobby.PackKey, lobby.UsedPromptIndices);
         lobby.RoundPrompts[roundNumber] = lobby.CurrentPrompt;
         lobby.Answers.Clear();
         lobby.AiAnswerRequested = false;
@@ -208,7 +208,8 @@ public class GameEngine : BackgroundService
             GroupStats: groupStats,
             TimingState: lobby.TimingState,
             FallbackState: lobby.FallbackState,
-            TimeRemaining: remaining);
+            TimeRemaining: remaining,
+            PackKey: lobby.PackKey);
 
         _ = Task.Run(async () =>
         {

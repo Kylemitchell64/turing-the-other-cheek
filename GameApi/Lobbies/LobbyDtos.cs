@@ -8,8 +8,9 @@ namespace GameApi.Lobbies;
 public record LobbyPlayerDto(string DisplayName, int TokensRemaining, bool IsConnected, bool IsHost);
 
 // Full LobbyUpdated payload — includes the join code and who the host is by name
-// so the client can show the host-only Start button.
-public record LobbyStateDto(string Code, string State, List<LobbyPlayerDto> Players);
+// so the client can show the host-only Start button. PackKey lets a late joiner see
+// the currently selected prompt pack (host-driven, reveals nothing about the AI).
+public record LobbyStateDto(string Code, string State, List<LobbyPlayerDto> Players, string PackKey);
 
 // One entry in GameStarted(roster[]). Humans + the AI, indistinguishable.
 // Deliberately NO user id, NO isAi, NO isHost — just name + tokens.

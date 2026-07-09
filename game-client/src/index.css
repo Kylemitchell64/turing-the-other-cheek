@@ -248,6 +248,63 @@ button.ghost:disabled {
   padding: 0.1rem 0.4rem;
 }
 
+/* --- prompt pack picker (phase 10) --- */
+
+.pack-picker {
+  margin: 0.75rem 0 0.5rem;
+}
+
+.pack-heading {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0 0 0.4rem;
+}
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+
+.seg {
+  padding: 0.55rem 0.4rem;
+  background: #060a08;
+  border: 1px solid var(--neon-dim);
+  color: var(--muted);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.8rem;
+  letter-spacing: 1px;
+}
+
+.seg.on {
+  color: var(--neon);
+  border-color: var(--neon);
+  box-shadow: 0 0 10px rgba(57, 255, 20, 0.3);
+}
+
+.seg.locked {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.seg:disabled {
+  cursor: default;
+}
+
+.pack-desc {
+  margin: 0.6rem 0 0.2rem;
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.pack-age {
+  margin: 0.15rem 0 0;
+  color: var(--danger);
+  font-size: 0.78rem;
+}
+
 /* --- game round loop (phase 3) --- */
 
 .prompt-box {

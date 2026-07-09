@@ -22,6 +22,14 @@ public class Lobby
     // clients in the roster like any human — never flagged as special until the game ends.
     public string? AiDisplayName { get; set; }
 
+    // Which prompt pack this lobby plays. Host picks it pre-start via SetLobbyOptions;
+    // defaults to family. Kept across a rematch (only the used-prompt set resets).
+    public string PackKey { get; set; } = PromptPacks.DefaultKey;
+
+    // Prompt indices already used this game, so a pack's prompts never repeat within
+    // one game (cleared on a fresh game / rematch, and when a pack is exhausted).
+    public HashSet<int> UsedPromptIndices { get; } = new();
+
     public LobbyPlayer? FindPlayer(string userId) =>
         Players.FirstOrDefault(p => p.UserId == userId);
 
@@ -103,6 +111,8 @@ public class Lobby
     {
         State = GameState.Lobby;
         AiDisplayName = null;
+        // PackKey intentionally preserved — a rematch keeps the host's chosen pack.
+        UsedPromptIndices.Clear();
         RoundNumber = 0;
         CurrentPrompt = "";
         PhaseDeadlineUtc = default;

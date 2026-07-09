@@ -147,6 +147,30 @@ public class GameHub : Hub
             await send();
     }
 
+    // Host-only, pre-start only: pick the prompt pack for this lobby. Broadcasts
+    // LobbyOptionsChanged so every client updates its selector live. The payload is
+    // just the pack key — host-driven, nothing about it hints at the AI.
+    public async Task SetLobbyOptions(string packKey)
+    {
+        var lobby = FindLobbyForCaller() ?? throw new HubException("You're not in a lobby");
+        packKey = (packKey ?? "").Trim();
+
+        lock (lobby.Sync)
+        {
+            if (lobby.HostUserId != UserId)
+                throw new HubException("Only the host can change the pack");
+            if (lobby.State != GameState.Lobby)
+                throw new HubException("Can't change the pack once the game has started");
+            if (!PromptPacks.IsValidKey(packKey))
+                throw new HubException("Unknown pack");
+
+            lobby.PackKey = packKey;
+        }
+
+        _logger.LogInformation("Lobby {Code} pack set to {Pack}", lobby.Code, packKey);
+        await Clients.Group(lobby.Code).SendAsync("LobbyOptionsChanged", packKey);
+    }
+
     // Submit this player's answer for the current round. 280-char cap, one per
     // player per round, only during Prompting.
     public async Task SubmitAnswer(string text)
@@ -309,7 +333,7 @@ public class GameHub : Hub
                 .Select(p => new LobbyPlayerDto(
                     p.DisplayName, p.TokensRemaining, p.IsConnected, p.UserId == lobby.HostUserId))
                 .ToList();
-            dto = new LobbyStateDto(lobby.Code, lobby.State.ToString(), players);
+            dto = new LobbyStateDto(lobby.Code, lobby.State.ToString(), players, lobby.PackKey);
         }
         await Clients.Group(lobby.Code).SendAsync("LobbyUpdated", dto);
     }
