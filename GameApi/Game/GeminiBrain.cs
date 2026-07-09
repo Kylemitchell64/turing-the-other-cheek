@@ -85,13 +85,29 @@ public class GeminiBrain : IAiBrain
         else
             template = template.Replace("{{styleSummaries}}", styleBlock);
 
-        return template
+        var filled = template
             .Replace("{{playerCount}}", ctx.HumanDisplayNames.Count.ToString())
             .Replace("{{selfName}}", ctx.AiDisplayName)
             .Replace("{{chatHistory}}", chatHistory)
             .Replace("{{previousOwnAnswers}}", ownAnswers)
             .Replace("{{currentPrompt}}", ctx.CurrentPrompt);
+
+        // One additive, pack-conditional line (all the AI-DESIGN rules above still
+        // stand). Family adds nothing.
+        var packLine = PackGuidance(ctx.PackKey);
+        return packLine.Length == 0 ? filled : filled + "\n\n" + packLine;
     }
+
+    // Pack-specific nudge appended to the system prompt. Trivia: guess like a human
+    // from foggy memory. Adult/drinking: match the group's crassness, never escalate.
+    private static string PackGuidance(string packKey) => packKey switch
+    {
+        "trivia" =>
+            "THIS GAME IS TRIVIA: answer like someone guessing from vague half-remembered knowledge, not a search engine. Be wrong sometimes, hedge, round numbers off, and never sound encyclopedic or perfectly precise.",
+        "adult" or "drinking" =>
+            "THIS GAME LEANS CRUDE: match the group's exact level of crassness and never escalate beyond it. If they stay tame, you stay tame.",
+        _ => "",
+    };
 
     // {{styleSummaries}} = one line per human "NAME: {json}".
     private static string RenderStyleSummaries(IReadOnlyList<string> summaries) =>

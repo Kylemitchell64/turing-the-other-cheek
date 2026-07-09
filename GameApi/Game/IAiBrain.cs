@@ -41,7 +41,11 @@ public record AiTurnContext(
     FallbackState FallbackState,
     // Time left in the prompt window when we asked — the brain sizes its delay so
     // the answer still lands before the deadline.
-    TimeSpan TimeRemaining);
+    TimeSpan TimeRemaining,
+    // Which prompt pack this game is using. Drives one additive, pack-conditional
+    // line in the system prompt (trivia = guess like a human; adult/drinking = match
+    // the group's crassness, never escalate). Defaults to family (no extra line).
+    string PackKey = "family");
 
 // The AI player. GeminiBrain is the real impl (API, backoff, canned fallback);
 // MockBrain backs the tests. Async + cancellation so a real HTTP call can be
