@@ -65,7 +65,11 @@ public class GeminiClient
                 {
                     Temperature = temperature,
                     MaxOutputTokens = maxOutputTokens,
-                    TopP = 0.95
+                    TopP = 0.95,
+                    // 2.5-flash "thinks" by default and the thinking tokens count against
+                    // maxOutputTokens - with small budgets it can burn them all and return
+                    // no text at all (finishReason MAX_TOKENS, empty parts)
+                    ThinkingConfig = new GeminiThinkingConfig { ThinkingBudget = 0 }
                 }
             };
 
@@ -131,6 +135,12 @@ public class GeminiClient
         [JsonPropertyName("temperature")] public double Temperature { get; set; }
         [JsonPropertyName("maxOutputTokens")] public int MaxOutputTokens { get; set; }
         [JsonPropertyName("topP")] public double TopP { get; set; }
+        [JsonPropertyName("thinkingConfig")] public GeminiThinkingConfig? ThinkingConfig { get; set; }
+    }
+
+    private sealed class GeminiThinkingConfig
+    {
+        [JsonPropertyName("thinkingBudget")] public int ThinkingBudget { get; set; }
     }
 
     private sealed class GeminiResponse
