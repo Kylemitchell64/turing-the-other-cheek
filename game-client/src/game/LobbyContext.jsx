@@ -35,6 +35,11 @@ export function LobbyProvider({ children }) {
   // LobbyUpdated for late joiners, kept live via LobbyOptionsChanged.
   const [packKey, setPackKey] = useState(DEFAULT_PACK);
 
+  // Who's currently shown as "typing" this round, keyed by display name. Driven by the
+  // server's PlayerTyping(name, isTyping) — humans (via SetTyping) AND the AI's faked
+  // indicator, indistinguishable here. Cleared on every phase change.
+  const [typing, setTyping] = useState({});
+
   // Live per-player token counts, keyed by display name. Seeded from the roster at
   // GameStarted (everyone starts with 3), then adjusted as tokens are spent: a veto
   // costs the vetoer one, elimination means zero. The server never streams a live
@@ -58,6 +63,10 @@ export function LobbyProvider({ children }) {
   // — e.g. the guest "join with code" path — always sees the just-set token.
   const tokenRef = useRef(token);
   tokenRef.current = token;
+
+  // Last typing state we told the server, so we only send on CHANGES (never spam a
+  // keystroke stream). Reset to false at the start of each prompting round.
+  const typingSentRef = useRef(false);
 
   // Lazily stand up the connection + wire every server→client event on first use.
   const ensureConnected = useCallback(async () => {
@@ -84,9 +93,24 @@ export function LobbyProvider({ children }) {
         setWrongAccusers([]);
         setEvents([]);
         setHistory([]);
+        setTyping({});
+        typingSentRef.current = false;
         // Seed live token counts from the roster (each entry carries its start count).
         setTokens(Object.fromEntries(r.map((p) => [p.displayName, p.tokensRemaining])));
         log("game started");
+      });
+
+      conn.on("PlayerTyping", (name, isTyping) => {
+        setTyping((prev) => {
+          if (isTyping) {
+            if (prev[name]) return prev;
+            return { ...prev, [name]: true };
+          }
+          if (!prev[name]) return prev;
+          const next = { ...prev };
+          delete next[name];
+          return next;
+        });
       });
 
       conn.on("PromptStarted", (prompt, number, deadlineUtc) => {
@@ -97,12 +121,15 @@ export function LobbyProvider({ children }) {
         setAccusationMade(null);
         setVetoWindow(null);
         setResolved(null);
+        setTyping({}); // fresh round, no one's typing yet
+        typingSentRef.current = false;
         log(`round ${number}: ${prompt}`);
       });
 
       conn.on("AnswersRevealed", (payload) => {
         setReveal(payload);
         setPhase("revealing");
+        setTyping({}); // prompting over — drop any lingering bubbles
         // Append to the scrollback (guard against a duplicate if the event repeats).
         setHistory((prev) =>
           prev.some((h) => h.round === payload.round) ? prev : [...prev, payload]
@@ -208,6 +235,18 @@ export function LobbyProvider({ children }) {
     await conn.invoke("SubmitAnswer", text);
   }, [ensureConnected]);
 
+  // Tell the server whether we're typing an answer. Throttled to state CHANGES only —
+  // the server re-broadcasts as PlayerTyping during Prompting. Best-effort (a dropped
+  // typing ping is cosmetic).
+  const setTypingState = useCallback(async (isTyping) => {
+    if (typingSentRef.current === isTyping) return;
+    typingSentRef.current = isTyping;
+    try {
+      const conn = connRef.current;
+      if (conn && conn.state === "Connected") await conn.invoke("SetTyping", isTyping);
+    } catch { /* cosmetic — ignore */ }
+  }, []);
+
   const makeAccusation = useCallback(async (accusedName) => {
     const conn = await ensureConnected();
     await conn.invoke("MakeAccusation", accusedName);
@@ -236,6 +275,8 @@ export function LobbyProvider({ children }) {
     setEvents([]);
     setHistory([]);
     setTokens({});
+    setTyping({});
+    typingSentRef.current = false;
     setPackKey(DEFAULT_PACK);
     if (connRef.current) {
       try { await connRef.current.stop(); } catch { /* ignore */ }
@@ -248,9 +289,9 @@ export function LobbyProvider({ children }) {
     status, lobby, roster, error, setError,
     round, phase, reveal, accusation, accusationMade,
     vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, events,
-    tokens, clockSkew, history, packKey,
+    tokens, clockSkew, history, packKey, typing,
     createLobby, joinLobby, startGame, setLobbyOptions, leaveLobby,
-    submitAnswer, makeAccusation, useFakeOut,
+    submitAnswer, makeAccusation, useFakeOut, setTypingState,
   };
 
   return <LobbyContext.Provider value={value}>{children}</LobbyContext.Provider>;

@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useLobby } from "../game/LobbyContext";
 import CountdownRing from "../components/CountdownRing";
 import AccuseButton from "../components/AccuseButton";
+import Podium from "../sprites/Podium";
 
 // Token pips for a player badge. Shows current tokens out of 3.
 function Tokens({ n }) {
@@ -21,8 +22,9 @@ export default function GamePage() {
   const {
     roster, phase, round, reveal, accusation, accusationMade,
     vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, history,
-    tokens, clockSkew,
+    tokens, clockSkew, typing,
     leaveLobby, submitAnswer, makeAccusation, useFakeOut: sendFakeOut, startGame,
+    setTypingState,
   } = useLobby();
   const navigate = useNavigate();
 
@@ -30,6 +32,7 @@ export default function GamePage() {
   const [submitted, setSubmitted] = useState(false);
   const [msg, setMsg] = useState(null);
   const [vetoed, setVetoed] = useState(false);
+  const [revealFlash, setRevealFlash] = useState(false);
   const lastRoundRef = useRef(0);
   const scrollRef = useRef(null);
 
@@ -54,6 +57,19 @@ export default function GamePage() {
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [history, phase, reveal]);
+
+  // "briefly excited for all" the moment answers drop — a shared little cheer, ~1.4s.
+  useEffect(() => {
+    if (phase !== "revealing" || !reveal) return;
+    setRevealFlash(true);
+    const id = setTimeout(() => setRevealFlash(false), 1400);
+    return () => clearTimeout(id);
+  }, [phase, reveal]);
+
+  // Stop telling the server we're typing once our answer is locked in.
+  useEffect(() => {
+    if (submitted) setTypingState(false);
+  }, [submitted, setTypingState]);
 
   if (!roster) return null;
 
@@ -102,6 +118,36 @@ export default function GamePage() {
   // The current round's revealed answers (for the live accuse cards), if any.
   const current = reveal;
 
+  // Map the live game events onto each podium's animation state. Everything here is
+  // derived from what every client already knows — nothing about it distinguishes the
+  // AI before the reveal (during Prompting a podium is "thinking" purely off that
+  // player's typing indicator, which the AI fakes too).
+  const podiumState = (name) => {
+    if (phase === "ended" && ended) {
+      const detector = ended.winType === "Detector";
+      if (detector && ended.winnerName === name) return "victorious";
+      if (!detector && name === ended.aiRealIdentityName) return "victorious"; // AI survived (revealed)
+      if (wrongAccusers.includes(name)) return "mad";
+      return eliminated.includes(name) ? "defeated" : "sad";
+    }
+    if (fakeOut && name === fakeOut.vetoer) return "excited";
+    if (phase === "veto") {
+      if (accusationMade && name === accusationMade.accuser) return "neutral";
+      const holdsTokens = (tokens[name] ?? 0) > 0 && !eliminated.includes(name);
+      return holdsTokens ? "confused" : "neutral"; // token-holders weigh a veto
+    }
+    if (resolved && !resolved.correct && name === resolved.accuser) {
+      return eliminated.includes(name) ? "defeated" : "sad";
+    }
+    if (accusationMade && phase === "accusing") {
+      if (name === accusationMade.accuser) return "mad";
+      if (name === accusationMade.accused) return "confused";
+    }
+    if (phase === "revealing") return revealFlash ? "excited" : "neutral";
+    if (phase === "prompting") return typing[name] ? "thinking" : "neutral";
+    return "neutral";
+  };
+
   return (
     <div className={`screen game ${fakeOut ? "shake" : ""}`}>
       {fakeOut && (
@@ -128,19 +174,27 @@ export default function GamePage() {
         />
       ) : (
         <>
-          {/* ROSTER STRIP with live token badges */}
-          <div className="roster-strip">
-            {roster.map((p) => {
-              const t = tokens[p.displayName] ?? p.tokensRemaining;
-              const out = eliminated.includes(p.displayName);
-              const isMe = p.displayName === myName;
-              return (
-                <div key={p.displayName} className={`chip${out ? " out" : ""}${isMe ? " me" : ""}`}>
-                  <span className="chip-name">{p.displayName}{isMe ? " (you)" : ""}</span>
-                  <Tokens n={t} />
-                </div>
-              );
-            })}
+          <div className="crt-head">
+            {phase === "prompting"
+              ? `[ ROUND ${round?.number ?? 1} / 8 ]`
+              : phase === "accusing"
+                ? "[ ACCUSE ]"
+                : phase === "veto"
+                  ? "[ FAKE-OUT WINDOW ]"
+                  : "[ REVEAL ]"}
+          </div>
+
+          {/* PODIUM ROW — one chibi per roster member, the focal point */}
+          <div className="podium-row">
+            {roster.map((p) => (
+              <Podium
+                key={p.displayName}
+                name={p.displayName}
+                state={podiumState(p.displayName)}
+                isMe={p.displayName === myName}
+                tokens={tokens[p.displayName] ?? p.tokensRemaining}
+              />
+            ))}
           </div>
 
           {/* CHAT SCROLLBACK */}
@@ -185,7 +239,7 @@ export default function GamePage() {
                   label="answer"
                 />
                 <div className="dock-main">
-                  <div className="prompt-box">{round.prompt}</div>
+                  <div className="prompt-box">{round.prompt}<span className="cursor" /></div>
                   {submitted ? (
                     <div className="answer-locked">
                       <span className="lock-ico">✓</span> answer locked in. waiting for the reveal…
@@ -194,7 +248,12 @@ export default function GamePage() {
                     <form className="answer-form" onSubmit={onSubmit}>
                       <input
                         value={answer}
-                        onChange={(e) => setAnswer(e.target.value)}
+                        onChange={(e) => {
+                          setAnswer(e.target.value);
+                          setTypingState(!!e.target.value.trim());
+                        }}
+                        onFocus={() => { if (answer.trim()) setTypingState(true); }}
+                        onBlur={() => setTypingState(false)}
                         maxLength={280}
                         placeholder="type something human…"
                         autoFocus
@@ -315,10 +374,19 @@ function EndScreen({ ended, myName, iWasFooled, onRematch, onLeave, msg }) {
     if (iWasFooled) deltas.push("+1 times fooled");
   }
 
+  // Center-stage winner: the detector on a catch, or the AI itself when it survives
+  // (its identity is already revealed on this screen, so a victory loop is fair game).
+  const championName = detector ? ended.winnerName : ended.aiRealIdentityName;
+
   return (
     <div className="panel end">
       <div className={`banner ${detector ? "banner-detector" : "banner-ai"}`}>
-        <h1 className="glow">{detector ? "DETECTOR WINS" : "THE AI SURVIVES"}</h1>
+        <h1 className="glow">{detector ? "[ DETECTOR WINS ]" : "[ THE AI SURVIVES ]"}</h1>
+        {championName && (
+          <div className="champion">
+            <Podium name={championName} state="victorious" size={84} tokens={0} />
+          </div>
+        )}
         <p className="tagline">
           {detector
             ? iWon

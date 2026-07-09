@@ -73,8 +73,8 @@ export default function LobbyPage() {
       </div>
 
       <div className="panel">
-        <h1 className="glow">LOBBY</h1>
-        <p className="tagline">share the code. 3–8 players.</p>
+        <h1 className="glow">[ LOBBY ]</h1>
+        <p className="tagline">share the code. 3–8 players.<span className="cursor" /></p>
 
         <button className="code" onClick={copyCode} title="tap to copy">
           {lobby.code.split("").map((c, i) => (

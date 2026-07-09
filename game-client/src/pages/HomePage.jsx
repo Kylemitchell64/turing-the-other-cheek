@@ -48,8 +48,8 @@ export default function HomePage() {
       </div>
 
       <div className="panel">
-        <h1 className="glow">TURING THE OTHER CHEEK</h1>
-        <p className="tagline">the AI is learning how you type. every game makes it harder to catch.</p>
+        <h1 className="glow">[ TURING THE OTHER CHEEK ]</h1>
+        <p className="tagline">the AI is learning how you type. every game makes it harder to catch.<span className="cursor" /></p>
 
         {err && <div className="error">{err}</div>}
 

@@ -1,11 +1,12 @@
 :root {
-  --bg: #050807;
-  --panel: #0a0f0d;
-  --neon: #39ff14;
-  --neon-dim: #1f8b11;
-  --text: #cfeede;
+  --bg: #0a0f0a;
+  --panel: #0c130c;
+  --neon: #33ff66;
+  --neon-dim: #1c7a3a;
+  --text: #bfe9cf;
   --muted: #5c7a6a;
   --danger: #ff3b4e;
+  --amber: #ffb300;
   font-family: "Courier New", ui-monospace, monospace;
   color-scheme: dark;
 }
@@ -24,7 +25,53 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  background-image: radial-gradient(circle at 50% 0%, rgba(57, 255, 20, 0.06), transparent 60%);
+  background-image: radial-gradient(circle at 50% 0%, rgba(51, 255, 102, 0.07), transparent 62%);
+}
+
+/* Faint CRT scanline overlay across the whole viewport — very low opacity, sits above
+   content but ignores pointer events. A slow drift adds life; both the drift and the
+   lines back off under prefers-reduced-motion. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 0,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.16) 3px,
+    rgba(0, 0, 0, 0) 4px
+  );
+  background-size: 100% 4px;
+  animation: scan 8s linear infinite;
+  opacity: 0.5;
+}
+
+@keyframes scan {
+  to { background-position: 0 128px; }
+}
+
+/* Blinking block cursor for console-style output. */
+.cursor {
+  display: inline-block;
+  width: 0.55em;
+  height: 1.05em;
+  margin-left: 0.15em;
+  vertical-align: text-bottom;
+  background: var(--neon);
+  box-shadow: 0 0 6px rgba(51, 255, 102, 0.7);
+  animation: blink 1.05s steps(1) infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::after { animation: none; opacity: 0.28; }
+  .cursor { animation: none; }
 }
 
 .screen {
@@ -46,15 +93,18 @@ body {
   border: 1px solid var(--neon-dim);
   border-radius: 10px;
   padding: 1.5rem 1.25rem;
-  box-shadow: 0 0 24px rgba(57, 255, 20, 0.08);
+  /* double-line box-drawing feel: outer glow + a thin inset rule inside the border */
+  box-shadow:
+    0 0 24px rgba(51, 255, 102, 0.08),
+    inset 0 0 0 1px rgba(51, 255, 102, 0.12);
 }
 
 h1.glow {
   margin: 0 0 0.25rem;
-  font-size: 1.5rem;
+  font-size: 1.4rem;
   letter-spacing: 2px;
   color: var(--neon);
-  text-shadow: 0 0 8px rgba(57, 255, 20, 0.7);
+  text-shadow: 0 0 8px rgba(51, 255, 102, 0.7);
 }
 
 .tagline {
@@ -624,7 +674,40 @@ button.danger-btn {
   box-shadow: 0 0 5px rgba(57, 255, 20, 0.7);
 }
 
-/* --- game roster strip --- */
+/* bracketed terminal section header */
+.crt-head {
+  text-align: center;
+  font-size: 0.82rem;
+  letter-spacing: 3px;
+  color: var(--neon);
+  text-shadow: 0 0 8px rgba(51, 255, 102, 0.6);
+  padding: 0.1rem 0;
+}
+
+/* --- game podium row (the focal point) --- */
+.podium-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 0.35rem 0.5rem;
+  padding: 0.6rem 0.4rem 0.3rem;
+  border: 1px solid var(--neon-dim);
+  border-radius: 10px;
+  background:
+    linear-gradient(to bottom, transparent 60%, rgba(51, 255, 102, 0.04)),
+    var(--panel);
+  box-shadow: inset 0 0 0 1px rgba(51, 255, 102, 0.1);
+}
+
+/* end-screen center-stage winner */
+.champion {
+  display: flex;
+  justify-content: center;
+  margin: 0.4rem 0 0.2rem;
+}
+
+/* --- game roster strip (legacy, still used in a couple spots) --- */
 .roster-strip {
   display: flex;
   flex-wrap: wrap;
