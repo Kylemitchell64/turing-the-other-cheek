@@ -129,3 +129,51 @@ code, everyone joins, host hits Start. Catch the AI.
 If something looks different from these steps, the dashboards change their UI now and then —
 the field names above (Docker runtime, Root Directory `game-client`, the four env vars) are
 what matters; find the equivalent box.
+
+---
+
+## Adding OAuth (Google + GitHub) — optional
+
+Guest login and password login work with nothing extra. The "sign in with Google/GitHub"
+buttons only appear once you've configured that provider — the client asks
+`GET /api/auth/providers` and shows a button per provider that's turned on. A provider is
+"on" only when BOTH its client id and secret are set on Render.
+
+### Get the credentials
+
+1. **Google** — https://console.cloud.google.com/apis/credentials → **Create Credentials**
+   → **OAuth client ID** → **Web application**. Under **Authorized redirect URIs** add:
+   - `https://turing-the-other-cheek.onrender.com/api/auth/google/callback`
+   - `http://localhost:5222/api/auth/google/callback` (only if you want it locally too)
+
+   Copy the **Client ID** and **Client secret**.
+
+2. **GitHub** — https://github.com/settings/developers → **New OAuth App**.
+   - **Homepage URL**: `https://turing-the-other-cheek.vercel.app`
+   - **Authorization callback URL**:
+     `https://turing-the-other-cheek.onrender.com/api/auth/github/callback`
+
+   GitHub allows one callback URL per app — make a separate app for localhost if you want
+   local sign-in. Copy the **Client ID** and generate a **Client secret**.
+
+### Add the Render env vars
+
+In the Render dashboard → your service → **Environment** → **Add Environment Variable**,
+add only the ones you're using (both halves of a provider or neither):
+
+| Key | Value |
+|-----|-------|
+| `GOOGLE_CLIENT_ID` | your Google client id |
+| `GOOGLE_CLIENT_SECRET` | your Google client secret |
+| `GITHUB_CLIENT_ID` | your GitHub client id |
+| `GITHUB_CLIENT_SECRET` | your GitHub client secret |
+| `CLIENT_URL` | (optional) your Vercel URL if it differs from the default `https://turing-the-other-cheek.vercel.app` |
+
+Save → Render redeploys. The buttons appear on the login screen automatically. If you don't
+set `CLIENT_URL`, the app redirects back to the Vercel URL in prod / `localhost:5173` in dev.
+
+> **How the flow works:** the browser hits `/api/auth/{provider}/login` (server redirects to
+> the provider with a CSRF `state` cookie), the provider bounces back to
+> `/api/auth/{provider}/callback`, the API exchanges the code, finds-or-creates the account,
+> then redirects the browser to `{CLIENT_URL}/auth/callback#token=...`. The SPA parses the
+> token out of the fragment, keeps it in memory, and strips the fragment from the URL.
