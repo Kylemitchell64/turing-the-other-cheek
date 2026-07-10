@@ -150,3 +150,28 @@ test('four guests play a full game to a detector win', async ({ browser }) => {
     for (const ctx of contexts) await ctx.close();
   }
 });
+
+// Phase 21: the procedural-music widget must be present on Home, must not throw or
+// autoplay-block anything, and audio must start off a real click (never before). Audio
+// can't be "heard" in CI, so we assert the engine's window.__chiptuneStarted flag flips
+// only after the user interacts with the widget.
+test('music widget starts the chiptune on click, no errors on home', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (e) => pageErrors.push(String(e)));
+
+  await guestLogin(page, 'Melody');
+
+  // Nothing should have started before any interaction (autoplay policy respected).
+  expect(await page.evaluate(() => window.__chiptuneStarted === true)).toBe(false);
+
+  // Open the widget and pick a mood — the click is the gesture that unlocks audio.
+  await page.getByRole('button', { name: 'open music controls' }).click();
+  await page.getByRole('button', { name: 'ARCADE', exact: true }).click();
+
+  await expect
+    .poll(() => page.evaluate(() => window.__chiptuneStarted === true), { timeout: 10_000 })
+    .toBe(true);
+
+  // The widget wiring must never throw (covers the AudioContext-guard paths too).
+  expect(pageErrors, `unexpected page errors: ${pageErrors.join('\n')}`).toEqual([]);
+});
