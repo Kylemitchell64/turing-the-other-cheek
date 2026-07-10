@@ -41,8 +41,15 @@ export default function AuthCallbackPage() {
 
     if (token) {
       applyToken(token);
-      // First-use: route new OAuth users to the creator before Home.
       const claims = decodeJwt(token);
+      // Brand-new external account with no chosen name → pick one first (which can also
+      // claim a prior guest identity). The username screen then continues the first-use
+      // chain itself, so we stop here.
+      if (claims?.needsUsername === "true") {
+        navigate("/choose-username", { replace: true });
+        return;
+      }
+      // Otherwise first-use: route returning OAuth users straight to the creator or home.
       const identity = claims?.displayName || claims?.unique_name;
       needsCreator(token, identity)
         .then((needs) => navigate(needs ? "/character" : "/", { replace: true }))

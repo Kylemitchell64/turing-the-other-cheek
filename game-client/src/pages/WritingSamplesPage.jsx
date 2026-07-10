@@ -17,8 +17,12 @@ function knowledge(count) {
 }
 
 export default function WritingSamplesPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const navigate = useNavigate();
+
+  // Guests keep only a light profile (rolling 10-sample cap); signing in unlocks the deep
+  // one. The isGuest claim rides in the JWT as a string.
+  const isGuest = user?.isGuest === "true";
 
   const [samples, setSamples] = useState([]);
   const [text, setText] = useState("");
@@ -83,6 +87,12 @@ export default function WritingSamplesPage() {
           paste how you actually write. the AI studies it to blend in as you. every
           sample makes it harder to catch.
         </p>
+
+        {isGuest && (
+          <div className="guest-note">
+            // guest names keep a light profile — sign in to build the full one.
+          </div>
+        )}
 
         {/* AI knowledge indicator */}
         <div className="knowledge">

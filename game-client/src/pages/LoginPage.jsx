@@ -4,24 +4,21 @@ import { useAuth } from "../auth/AuthContext";
 import { useLobby } from "../game/LobbyContext";
 import { needsCreator } from "../auth/firstUse";
 
+// Shown once per device before the very first guest play so nobody is surprised that a
+// guest name can get swept. After that, PLAY goes straight through.
+const QUICK_PLAY_SEEN = "quickPlaySeen";
+
 export default function LoginPage() {
-  const { login, register, guestLogin, apiBase } = useAuth();
+  const { guestLogin, apiBase } = useAuth();
   const { joinLobby } = useLobby();
   const navigate = useNavigate();
 
-  // Guest is the default, fastest path. "classic" collapses the password form.
   const [guestName, setGuestName] = useState("");
   const [guestCode, setGuestCode] = useState("");
-
-  const [showClassic, setShowClassic] = useState(false);
-  const [mode, setMode] = useState("login"); // "login" | "register"
-  const [username, setUsername] = useState("");
-  const [displayName, setDisplayName] = useState("");
-  const [password, setPassword] = useState("");
-
   const [providers, setProviders] = useState({ google: false, github: false });
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [showModal, setShowModal] = useState(false);
 
   // Which OAuth buttons to show — driven entirely by the server flag.
   useEffect(() => {
@@ -33,8 +30,10 @@ export default function LoginPage() {
     return () => { alive = false; };
   }, [apiBase]);
 
-  const playAsGuest = async (e) => {
-    e.preventDefault();
+  const anyOAuth = providers.google || providers.github;
+
+  const doGuestLogin = async () => {
+    setShowModal(false);
     setError(null);
     setBusy(true);
     try {
@@ -47,8 +46,6 @@ export default function LoginPage() {
         return;
       }
       if (code) {
-        // Auto-join straight into the lobby via the existing join flow. The hub's
-        // accessTokenFactory is lazy, so it reads the just-set guest token on connect.
         await joinLobby(code);
         navigate("/lobby");
       } else {
@@ -61,31 +58,24 @@ export default function LoginPage() {
     }
   };
 
-  const submitClassic = async (e) => {
+  const onPlay = (e) => {
     e.preventDefault();
-    setError(null);
-    setBusy(true);
-    try {
-      const data = mode === "login"
-        ? await login(username.trim(), password)
-        : await register(username.trim(), displayName.trim(), password);
-      if (await needsCreator(data.token, data.displayName || data.username)) {
-        navigate("/character");
-        return;
-      }
-      navigate("/");
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setBusy(false);
-    }
+    if (guestName.trim().length < 3) return;
+    // First time on this device: explain guest vs sign-in before diving in.
+    let seen = false;
+    try { seen = localStorage.getItem(QUICK_PLAY_SEEN) === "1"; } catch { seen = false; }
+    if (!seen) { setShowModal(true); return; }
+    doGuestLogin();
+  };
+
+  const continueAsGuest = () => {
+    try { localStorage.setItem(QUICK_PLAY_SEEN, "1"); } catch { /* private mode */ }
+    doGuestLogin();
   };
 
   const oauth = (provider) => {
     window.location.href = `${apiBase}/api/auth/${provider}/login`;
   };
-
-  const anyOAuth = providers.google || providers.github;
 
   return (
     <div className="screen center">
@@ -93,8 +83,8 @@ export default function LoginPage() {
         <h1 className="glow">TURING THE OTHER CHEEK</h1>
         <p className="tagline">one of you isn't human. find them.</p>
 
-        {/* Fastest path: username + optional code, one tap. */}
-        <form onSubmit={playAsGuest} className="form">
+        {/* Fastest path: name + optional code, one tap. */}
+        <form onSubmit={onPlay} className="form">
           <input
             type="text"
             placeholder="pick a name"
@@ -114,13 +104,13 @@ export default function LoginPage() {
           />
           {error && <div className="error">{error}</div>}
           <button type="submit" className="primary big" disabled={busy || guestName.trim().length < 3}>
-            {busy ? "..." : "PLAY AS GUEST"}
+            {busy ? "..." : "PLAY"}
           </button>
         </form>
 
         {anyOAuth && (
           <div className="oauth">
-            <div className="divider"><span>or</span></div>
+            <div className="divider"><span>sign in &amp; save everything</span></div>
             {providers.google && (
               <button type="button" className="ghost" onClick={() => oauth("google")} disabled={busy}>
                 sign in with Google
@@ -133,68 +123,40 @@ export default function LoginPage() {
             )}
           </div>
         )}
-
-        <div className="divider"><span></span></div>
-        <button
-          type="button"
-          className="link"
-          onClick={() => { setShowClassic((s) => !s); setError(null); }}
-        >
-          {showClassic ? "hide classic login" : "classic login"}
-        </button>
-
-        {showClassic && (
-          <>
-            <div className="tabs">
-              <button
-                className={mode === "login" ? "tab active" : "tab"}
-                onClick={() => { setMode("login"); setError(null); }}
-                type="button"
-              >
-                log in
-              </button>
-              <button
-                className={mode === "register" ? "tab active" : "tab"}
-                onClick={() => { setMode("register"); setError(null); }}
-                type="button"
-              >
-                sign up
-              </button>
-            </div>
-
-            <form onSubmit={submitClassic} className="form">
-              <input
-                type="text"
-                placeholder="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                autoComplete="username"
-                required
-              />
-              {mode === "register" && (
-                <input
-                  type="text"
-                  placeholder="display name"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  required
-                />
-              )}
-              <input
-                type="password"
-                placeholder="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
-                required
-              />
-              <button type="submit" className="primary" disabled={busy}>
-                {busy ? "..." : mode === "login" ? "log in" : "create account"}
-              </button>
-            </form>
-          </>
-        )}
       </div>
+
+      {showModal && (
+        <div className="modal-backdrop" onClick={() => setShowModal(false)}>
+          <div className="modal terminal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="modal-head">[ QUICK PLAY ]</h2>
+            <p className="modal-copy">
+              playing as a guest saves your character and a light style profile, so the AI
+              remembers you a bit. heads up: names left unused for 30 days get wiped.
+            </p>
+            <p className="modal-copy">
+              sign in instead and everything sticks around for good — it also trains a
+              sharper impostor against you, and never expires.
+            </p>
+            <button type="button" className="primary big" onClick={continueAsGuest} disabled={busy}>
+              CONTINUE AS GUEST
+            </button>
+            {anyOAuth ? (
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => { setShowModal(false); oauth(providers.google ? "google" : "github"); }}
+                disabled={busy}
+              >
+                SIGN IN INSTEAD
+              </button>
+            ) : (
+              <button type="button" className="link" onClick={() => setShowModal(false)}>
+                maybe later
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

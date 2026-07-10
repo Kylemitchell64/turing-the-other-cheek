@@ -1209,3 +1209,58 @@ button.about-toggle {
   color: var(--text);
 }
 .about-foot { color: var(--muted); }
+
+/* ---- QUICK PLAY modal (login) ---- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.2rem;
+  z-index: 50;
+}
+
+.modal.terminal {
+  width: 100%;
+  max-width: 380px;
+  background: var(--panel);
+  border: 1px solid var(--neon);
+  box-shadow: 0 0 18px var(--neon-dim);
+  padding: 1.3rem 1.2rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.modal-head {
+  color: var(--neon);
+  font-size: 1rem;
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 8px var(--neon-dim);
+  margin: 0;
+}
+
+.modal-copy {
+  color: var(--text);
+  font-size: 0.85rem;
+  line-height: 1.55;
+  margin: 0;
+}
+
+.modal.terminal .primary,
+.modal.terminal .ghost {
+  margin-top: 0.2rem;
+}
+
+/* guest light-profile note on the samples screen */
+.guest-note {
+  border: 1px dashed var(--neon-dim);
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  padding: 0.55rem 0.7rem;
+  margin: 0.4rem 0 0.8rem;
+  border-radius: 2px;
+}

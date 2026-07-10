@@ -2,6 +2,7 @@ import { Routes, Route } from "react-router-dom";
 import ProtectedRoute from "./auth/ProtectedRoute";
 import LoginPage from "./pages/LoginPage";
 import AuthCallbackPage from "./pages/AuthCallbackPage";
+import ChooseUsernamePage from "./pages/ChooseUsernamePage";
 import HomePage from "./pages/HomePage";
 import CharacterCreatorPage from "./pages/CharacterCreatorPage";
 import LobbyPage from "./pages/LobbyPage";
@@ -14,6 +15,14 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
+      <Route
+        path="/choose-username"
+        element={
+          <ProtectedRoute>
+            <ChooseUsernamePage />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/"
         element={
