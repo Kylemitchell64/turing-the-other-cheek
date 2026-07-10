@@ -20,10 +20,10 @@ public class AuthController : ControllerBase
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly SignInManager<ApplicationUser> _signInManager;
-    private readonly IConfiguration _configuration;
     private readonly ILogger<AuthController> _logger;
     private readonly OAuthService _oauth;
     private readonly IWebHostEnvironment _env;
+    private readonly JwtTokenService _tokens;
 
     // 3-20 chars, letters/digits/underscore. Shared by guest login + username generation.
     private static readonly Regex UsernameRegex = new("^[A-Za-z0-9_]{3,20}$", RegexOptions.Compiled);
@@ -31,17 +31,17 @@ public class AuthController : ControllerBase
     public AuthController(
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
-        IConfiguration configuration,
         ILogger<AuthController> logger,
         OAuthService oauth,
-        IWebHostEnvironment env)
+        IWebHostEnvironment env,
+        JwtTokenService tokens)
     {
         _userManager = userManager;
         _signInManager = signInManager;
-        _configuration = configuration;
         _logger = logger;
         _oauth = oauth;
         _env = env;
+        _tokens = tokens;
     }
 
     // POST /api/auth/register
@@ -64,7 +64,7 @@ public class AuthController : ControllerBase
             return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
 
         _logger.LogInformation("New user registered: {Username}", req.Username);
-        return Ok(BuildAuthResponse(user));
+        return Ok(_tokens.BuildAuthResponse(user));
     }
 
     // POST /api/auth/login
@@ -81,7 +81,7 @@ public class AuthController : ControllerBase
             return Unauthorized(new { error = "Wrong username or password" });
 
         await TouchLastSeenAsync(user);
-        return Ok(BuildAuthResponse(user));
+        return Ok(_tokens.BuildAuthResponse(user));
     }
 
     // GET /api/auth/me
@@ -124,7 +124,7 @@ public class AuthController : ControllerBase
             // Resume the existing guest — same style profile carries over. Bump LastSeen
             // so an active guest is never swept by the retention job.
             await TouchLastSeenAsync(existing);
-            return Ok(BuildAuthResponse(existing));
+            return Ok(_tokens.BuildAuthResponse(existing));
         }
 
         var user = new ApplicationUser
@@ -142,7 +142,7 @@ public class AuthController : ControllerBase
             return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
 
         _logger.LogInformation("New guest: {Username}", username);
-        return Ok(BuildAuthResponse(user));
+        return Ok(_tokens.BuildAuthResponse(user));
     }
 
     // GET /api/auth/providers -> { google: bool, github: bool }
@@ -212,7 +212,7 @@ public class AuthController : ControllerBase
         if (user == null)
             return Redirect($"{clientUrl}/auth/callback#error=account");
 
-        var auth = BuildAuthResponse(user);
+        var auth = _tokens.BuildAuthResponse(user);
         return Redirect($"{clientUrl}/auth/callback#token={Uri.EscapeDataString(auth.Token)}");
     }
 
@@ -291,46 +291,5 @@ public class AuthController : ControllerBase
     {
         user.LastSeenUtc = DateTime.UtcNow;
         await _userManager.UpdateAsync(user);
-    }
-
-    private AuthResponse BuildAuthResponse(ApplicationUser user)
-    {
-        return new AuthResponse
-        {
-            Token = GenerateJwt(user),
-            DisplayName = user.DisplayName ?? user.UserName!,
-            Username = user.UserName!,
-            IsGuest = user.IsGuest,
-            NeedsUsername = user.NeedsUsername
-        };
-    }
-
-    private string GenerateJwt(ApplicationUser user)
-    {
-        var jwtKey = Environment.GetEnvironmentVariable("JWT_KEY")
-            ?? _configuration["Jwt:Key"]
-            ?? throw new InvalidOperationException("JWT_KEY is not configured");
-
-        var claims = new[]
-        {
-            new Claim(ClaimTypes.NameIdentifier, user.Id),
-            new Claim(ClaimTypes.Name, user.UserName!),
-            new Claim("displayName", user.DisplayName ?? user.UserName!),
-            new Claim("isGuest", user.IsGuest ? "true" : "false"),
-            new Claim("needsUsername", user.NeedsUsername ? "true" : "false")
-        };
-
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
-        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-        var token = new JwtSecurityToken(
-            issuer: "turing-api",
-            audience: "turing-app",
-            claims: claims,
-            expires: DateTime.UtcNow.AddHours(4),
-            signingCredentials: creds
-        );
-
-        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }

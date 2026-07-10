@@ -133,6 +133,9 @@ builder.Services.AddScoped<DatabaseHealthCheck>();
 builder.Services.AddHttpClient("oauth", c => c.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddSingleton<GameApi.Auth.OAuthService>();
 
+// Mints JWTs / AuthResponses for both AuthController and ProfileController's username claim.
+builder.Services.AddSingleton<GameApi.Auth.JwtTokenService>();
+
 // Realtime: SignalR + the process-wide in-memory lobby store.
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<LobbyStore>();
