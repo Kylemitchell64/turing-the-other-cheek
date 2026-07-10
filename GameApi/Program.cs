@@ -176,6 +176,11 @@ builder.Services.AddAuthorization(o =>
 });
 builder.Services.AddSingleton<GameApi.Admin.MaintenanceState>();
 
+// Signed share-codes for AI-built custom packs (phase 20): key derived from JWT_KEY.
+// Plus the per-user generate limiter.
+builder.Services.AddSingleton(new GameApi.GameLoop.PackCodec(jwtKey));
+builder.Services.AddSingleton<GameApi.Controllers.PackGenRateLimiter>();
+
 // Realtime: SignalR + the process-wide in-memory lobby store.
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<LobbyStore>();
