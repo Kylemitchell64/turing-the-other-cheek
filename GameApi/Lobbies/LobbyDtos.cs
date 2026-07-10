@@ -16,9 +16,12 @@ public record LobbyPlayerDto(
 // Full LobbyUpdated payload — includes the join code and who the host is by name
 // so the client can show the host-only Start button. PackKey/Difficulty/PaceKey let
 // a late joiner see the current options (all host-driven, reveal nothing about the AI).
+// CrewName is the ONLY crew-related field allowed over the wire (ANONYMITY AUDIT): the
+// client shows "CREW: <name>" + the persistent code; the crew id, group profile, and
+// membership never leave the server. Null for ordinary lobbies.
 public record LobbyStateDto(
     string Code, string State, List<LobbyPlayerDto> Players,
-    string PackKey, string Difficulty, string PaceKey);
+    string PackKey, string Difficulty, string PaceKey, string? CrewName);
 
 // One entry in GameStarted(roster[]). Humans + the AI, indistinguishable.
 // Deliberately NO user id, NO isAi, NO isHost — just name + tokens + character.

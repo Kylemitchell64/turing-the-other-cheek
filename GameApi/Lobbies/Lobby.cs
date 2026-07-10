@@ -36,6 +36,21 @@ public class Lobby
     // one game (cleared on a fresh game / rematch, and when a pack is exhausted).
     public HashSet<int> UsedPromptIndices { get; } = new();
 
+    // ---- crew binding (phase 19) ----
+
+    // When set, this is a CREW lobby: only members of crew CrewId may join it, option
+    // changes persist back to the Crew row, and the AI plays with the group's notes.
+    // Null for ordinary one-off lobbies. Persists across a rematch (crew identity is stable).
+    public int? CrewId { get; set; }
+
+    // The crew's display name, shown to clients instead of nothing special (the ONLY
+    // group-related field allowed over the wire — see LobbyStateDto). Null when not a crew.
+    public string? CrewName { get; set; }
+
+    // The crew's rendered GROUP NOTES (built from Crew.GroupProfileJson) loaded at game
+    // start and injected into the impostor's system prompt. Null on EASY or no profile yet.
+    public string? GroupNotes { get; set; }
+
     public LobbyPlayer? FindPlayer(string userId) =>
         Players.FirstOrDefault(p => p.UserId == userId);
 

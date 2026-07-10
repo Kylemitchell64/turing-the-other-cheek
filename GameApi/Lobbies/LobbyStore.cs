@@ -60,7 +60,10 @@ public class LobbyStore
         return candidates[RandomNumberGenerator.GetInt32(candidates.Count)];
     }
 
-    private static string GenerateCode()
+    // A single 5-char code off the unambiguous alphabet. Public + static so crews reuse
+    // the exact same generator for their PERSISTENT codes (uniqueness checked against the
+    // DB by the caller, a different namespace from these live lobby codes).
+    public static string GenerateCode()
     {
         Span<char> chars = stackalloc char[5];
         for (var i = 0; i < chars.Length; i++)

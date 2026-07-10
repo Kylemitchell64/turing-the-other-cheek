@@ -479,7 +479,7 @@ public class GameHub : Hub
                     CharacterDefaults.Resolve(p.CharacterJson, p.DisplayName)))
                 .ToList();
             dto = new LobbyStateDto(lobby.Code, lobby.State.ToString(), players,
-                lobby.PackKey, lobby.Difficulty, lobby.PaceKey);
+                lobby.PackKey, lobby.Difficulty, lobby.PaceKey, lobby.CrewName);
         }
         await Clients.Group(lobby.Code).SendAsync("LobbyUpdated", dto);
     }

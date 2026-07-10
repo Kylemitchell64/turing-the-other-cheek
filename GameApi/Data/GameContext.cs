@@ -16,6 +16,8 @@ public class GameContext : IdentityDbContext<ApplicationUser>
     public DbSet<GameRoundPrompt> GameRoundPrompts => Set<GameRoundPrompt>();
     public DbSet<PlayerStats> PlayerStats => Set<PlayerStats>();
     public DbSet<UserReward> UserRewards => Set<UserReward>();
+    public DbSet<Crew> Crews => Set<Crew>();
+    public DbSet<CrewMember> CrewMembers => Set<CrewMember>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -104,6 +106,33 @@ public class GameContext : IdentityDbContext<ApplicationUser>
         {
             e.Property(p => p.Kind).HasMaxLength(64);
             e.HasIndex(p => p.UserId);
+            e.HasOne(p => p.User)
+                .WithMany()
+                .HasForeignKey(p => p.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<Crew>(e =>
+        {
+            e.Property(p => p.Name).HasMaxLength(24);
+            e.Property(p => p.JoinCode).HasMaxLength(5);
+            e.HasIndex(p => p.JoinCode).IsUnique();
+            e.Property(p => p.GroupProfileJson).HasColumnType("jsonb");
+            // Owner is a plain user reference. Restrict: deleting an account with a crew it
+            // still owns is blocked — the disband/leave flow re-points or removes the crew first.
+            e.HasOne(p => p.Owner)
+                .WithMany()
+                .HasForeignKey(p => p.OwnerUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<CrewMember>(e =>
+        {
+            e.HasIndex(p => new { p.CrewId, p.UserId }).IsUnique();
+            e.HasOne(p => p.Crew)
+                .WithMany(c => c.Members)
+                .HasForeignKey(p => p.CrewId)
+                .OnDelete(DeleteBehavior.Cascade);
             e.HasOne(p => p.User)
                 .WithMany()
                 .HasForeignKey(p => p.UserId)
