@@ -61,4 +61,28 @@ public class SystemPromptTests
         Assert.Contains("party game with 2 real people", prompt);
         Assert.DoesNotContain("{{", prompt);
     }
+
+    // Phase 19: a rendered GROUP NOTES block (crew game) is injected on NORMAL/HARD.
+    [Fact]
+    public void InjectsGroupNotes_OnHard_WhenPresent()
+    {
+        var notes = GroupProfiler.RenderNotes(
+            "{\"vibe\":\"chaotic and fast\",\"groupSlang\":[\"fr\",\"bruh\"],\"detectionHabits\":\"accuse fast\"}");
+        Assert.NotNull(notes);
+
+        var ctx = Ctx(System.Array.Empty<string>()) with { Difficulty = "hard", GroupNotes = notes };
+        var prompt = GeminiBrain.BuildSystemPrompt(ctx);
+        Assert.Contains("GROUP NOTES", prompt);
+        Assert.Contains("accuse fast", prompt);
+    }
+
+    // EASY never gets the group notes even if they're set (its whole prompt is swapped).
+    [Fact]
+    public void OmitsGroupNotes_OnEasy_EvenWhenPresent()
+    {
+        var notes = GroupProfiler.RenderNotes("{\"vibe\":\"chaotic and fast\"}");
+        var ctx = Ctx(System.Array.Empty<string>()) with { Difficulty = "easy", GroupNotes = notes };
+        var prompt = GeminiBrain.BuildSystemPrompt(ctx);
+        Assert.DoesNotContain("GROUP NOTES", prompt);
+    }
 }
