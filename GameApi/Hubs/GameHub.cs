@@ -422,6 +422,28 @@ public class GameHub : Hub
             .SendAsync("LobbyOptionsChanged", lobby.PackKey, lobby.Difficulty, lobby.PaceKey, pack.Name);
     }
 
+    // Host-only: set the room's chiptune mood (phase 21). Purely COSMETIC, so unlike the
+    // other option setters this works in ANY state — a host can change the vibe mid-game.
+    // We still validate the caller is the host of a lobby they belong to. Broadcasts
+    // LobbyMusicChanged so every follower's player switches to the shared soundtrack.
+    public async Task SetLobbyMusic(string mood)
+    {
+        var lobby = FindLobbyForCaller() ?? throw new HubException("You're not in a lobby");
+        mood = (mood ?? "").Trim();
+
+        lock (lobby.Sync)
+        {
+            if (lobby.HostUserId != UserId)
+                throw new HubException("Only the host can change the music");
+            if (!MusicMoods.IsValid(mood))
+                throw new HubException("Unknown music mood");
+            lobby.MusicMood = mood;
+        }
+
+        _logger.LogInformation("Lobby {Code} music set to {Mood}", lobby.Code, mood);
+        await Clients.Group(lobby.Code).SendAsync("LobbyMusicChanged", mood);
+    }
+
     // Write a crew lobby's freshly-picked options back to its Crew row. Fire-and-forget on
     // a fresh scope (the hub's own DbContext is gone once the method returns); a failure
     // just means the saved config lags a game — never blocks the live option change.
@@ -666,7 +688,8 @@ public class GameHub : Hub
                 .ToList();
             dto = new LobbyStateDto(lobby.Code, lobby.State.ToString(), players,
                 lobby.PackKey, lobby.Difficulty, lobby.PaceKey, lobby.CrewName,
-                lobby.PackKey == PromptPacks.CustomKey ? lobby.CustomPack?.Name : null);
+                lobby.PackKey == PromptPacks.CustomKey ? lobby.CustomPack?.Name : null,
+                lobby.MusicMood);
         }
         await Clients.Group(lobby.Code).SendAsync("LobbyUpdated", dto);
     }

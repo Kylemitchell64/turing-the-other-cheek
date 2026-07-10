@@ -22,9 +22,12 @@ public record LobbyPlayerDto(
 // CustomPackName carries the AI-built pack's title when PackKey is "custom" (phase 20) so
 // a late joiner sees the "CUSTOM: <name>" chip; null for normal packs. The prompts
 // themselves never travel here — only the display name does.
+// MusicMood is a host-driven COSMETIC field (phase 21): the room's chiptune mood so late
+// joiners sync their player to whatever the host last picked. Reveals nothing about the AI.
 public record LobbyStateDto(
     string Code, string State, List<LobbyPlayerDto> Players,
-    string PackKey, string Difficulty, string PaceKey, string? CrewName, string? CustomPackName);
+    string PackKey, string Difficulty, string PaceKey, string? CrewName, string? CustomPackName,
+    string MusicMood);
 
 // One entry in GameStarted(roster[]). Humans + the AI, indistinguishable.
 // Deliberately NO user id, NO isAi, NO isHost — just name + tokens + character.

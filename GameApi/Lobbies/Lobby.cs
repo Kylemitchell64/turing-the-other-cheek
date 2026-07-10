@@ -42,6 +42,12 @@ public class Lobby
     // Cleared when the host picks a normal pack; kept across a rematch like PackKey.
     public CustomPack? CustomPack { get; set; }
 
+    // The room's chiptune mood (phase 21). Host-driven and purely cosmetic: broadcast so
+    // everyone in the lobby who's "following the host" hears one shared soundtrack instead
+    // of six phones each playing their own. Late joiners read it off LobbyStateDto. Works
+    // in ANY state (even mid-game) since it's decoration. Kept across a rematch.
+    public string MusicMood { get; set; } = MusicMoods.Default;
+
     // ---- crew binding (phase 19) ----
 
     // When set, this is a CREW lobby: only members of crew CrewId may join it, option
