@@ -8,6 +8,7 @@ DEPLOY-CHECKLIST-LOCAL.md
 overnight-runner.ps1
 overnight.log
 .runner.lock
+claude-auto.ps1
 
 # secrets
 .env
