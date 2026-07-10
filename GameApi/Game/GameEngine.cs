@@ -20,16 +20,26 @@ public class GameEngine : BackgroundService
     private readonly LobbyStore _store;
     private readonly IHubContext<GameHub> _hub;
     private readonly IAiBrain _brain;
+    private readonly IAiGuesser _guesser;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly StyleSummarizer _summarizer;
     private readonly GroupProfiler _groupProfiler;
     private readonly GameTimings _timings;
     private readonly ILogger<GameEngine> _logger;
 
+    // Reverse mode (phase 22) runs a fixed 6 rounds regardless of the classic MaxRounds cap.
+    private const int ReverseRounds = 6;
+
+    // Upper bound the reverse reveal waits on the attribution task before advancing anyway.
+    // The guesser always returns fast (it random-falls-back internally), so this is only a
+    // safety net against a truly stuck task — never the normal path.
+    private static readonly TimeSpan ReverseAnalysisCap = TimeSpan.FromSeconds(15);
+
     public GameEngine(
         LobbyStore store,
         IHubContext<GameHub> hub,
         IAiBrain brain,
+        IAiGuesser guesser,
         IServiceScopeFactory scopeFactory,
         StyleSummarizer summarizer,
         GroupProfiler groupProfiler,
@@ -39,6 +49,7 @@ public class GameEngine : BackgroundService
         _store = store;
         _hub = hub;
         _brain = brain;
+        _guesser = guesser;
         _scopeFactory = scopeFactory;
         _summarizer = summarizer;
         _groupProfiler = groupProfiler;
@@ -141,14 +152,29 @@ public class GameEngine : BackgroundService
             switch (lobby.State)
             {
                 case GameState.Prompting:
-                    MaybeRequestAiAnswer(lobby);
+                    // Reverse mode has no impostor — nobody generates an AI answer; every
+                    // seat is a real human. Classic fires the impostor's answer task here.
+                    if (!GameModes.IsReverse(lobby.Mode))
+                        MaybeRequestAiAnswer(lobby);
                     if (DateTime.UtcNow >= lobby.PhaseDeadlineUtc)
                         EnterRevealing(lobby, outbound);
                     break;
 
                 case GameState.Revealing:
-                    if (DateTime.UtcNow >= lobby.PhaseDeadlineUtc)
+                    if (GameModes.IsReverse(lobby.Mode))
+                    {
+                        // The reveal window doubles as the AI's "analyzing" window: fire the
+                        // attribution task once, and advance when the read window (reset by
+                        // the task once its guesses land) or the safety cap expires. No
+                        // accuse/veto phases in reverse.
+                        MaybeRequestReverseGuess(lobby);
+                        if (DateTime.UtcNow >= lobby.PhaseDeadlineUtc)
+                            AdvanceAfterRound(lobby, outbound);
+                    }
+                    else if (DateTime.UtcNow >= lobby.PhaseDeadlineUtc)
+                    {
                         EnterAccusing(lobby, outbound);
+                    }
                     break;
 
                 case GameState.Accusing:
@@ -347,6 +373,12 @@ public class GameEngine : BackgroundService
 
     private void EnterRevealing(Lobby lobby, List<Func<Task>> outbound)
     {
+        if (GameModes.IsReverse(lobby.Mode))
+        {
+            EnterReverseRevealing(lobby, outbound);
+            return;
+        }
+
         // Prompting is over — clear every lingering typing indicator (humans still in
         // the box, or the AI if its task hasn't cleared itself yet) so no bubble sticks.
         if (lobby.TypingNames.Count > 0)
@@ -376,6 +408,147 @@ public class GameEngine : BackgroundService
         var code = lobby.Code;
         outbound.Add(() => _hub.Clients.Group(code).SendAsync("AnswersRevealed", dto));
     }
+
+    // ---- Reverse reveal (phase 22) ----
+
+    // No impostor to hide, so instead of the classic anonymized-but-attributed reveal we
+    // shuffle everyone's answers, strip the names to anon ids (a/b/c...), and show them while
+    // the AI "analyzes". The attribution task fires on the next tick and lands the guesses.
+    private void EnterReverseRevealing(Lobby lobby, List<Func<Task>> outbound)
+    {
+        // Clear any lingering typing bubbles just like the classic reveal.
+        if (lobby.TypingNames.Count > 0)
+        {
+            var code0 = lobby.Code;
+            foreach (var typer in lobby.TypingNames.ToList())
+                outbound.Add(() => _hub.Clients.Group(code0).SendAsync("PlayerTyping", typer, false));
+            lobby.TypingNames.Clear();
+        }
+
+        // Every human seat gets an entry (a blank for a no-show) — there's no AI seat.
+        foreach (var p in lobby.Players)
+            EnsureAnswerFor(lobby, p.DisplayName, isAi: false, authorUserId: p.UserId);
+
+        // Shuffle, then hand out stable anon ids. ReverseSlots keeps the true author (never
+        // sent until the guesses are revealed) so we can score the AI.
+        var entries = lobby.Answers
+            .Select(kv => (Name: kv.Key, Text: kv.Value.Text))
+            .ToList();
+        Shuffle(entries);
+
+        lobby.ReverseSlots.Clear();
+        var anon = new List<AnonAnswerDto>();
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var id = AnonId(i);
+            var author = lobby.FindPlayerByName(entries[i].Name);
+            lobby.ReverseSlots[id] = new ReverseSlot
+            {
+                AuthorName = entries[i].Name,
+                AuthorUserId = author?.UserId,
+                Text = entries[i].Text
+            };
+            anon.Add(new AnonAnswerDto(id, entries[i].Text));
+        }
+
+        lobby.State = GameState.Revealing;
+        lobby.ReverseGuessRequested = false;
+        // Hold the reveal open until the guesses land (ApplyReverseGuesses resets this to a
+        // short read window); the cap is only a safety net against a stuck task.
+        lobby.PhaseDeadlineUtc = DateTime.UtcNow + ReverseAnalysisCap;
+
+        var dto = new ReverseRevealStartedDto(lobby.RoundNumber, lobby.CurrentPrompt, anon);
+        var code = lobby.Code;
+        outbound.Add(() => _hub.Clients.Group(code).SendAsync("ReverseRevealStarted", dto));
+    }
+
+    // Anon ids: a, b, c, ... (max 8 seats, so a-h).
+    private static string AnonId(int index) => ((char)('a' + index)).ToString();
+
+    // Fire the AI's attribution task once per reveal, in the background — mirrors
+    // MaybeRequestAiAnswer. The guesser never throws to us (it random-falls-back inside), so
+    // ApplyReverseGuesses always runs and the round always advances.
+    private void MaybeRequestReverseGuess(Lobby lobby)
+    {
+        if (lobby.ReverseGuessRequested) return;
+        lobby.ReverseGuessRequested = true;
+
+        var round = lobby.RoundNumber;
+        var code = lobby.Code;
+        var anon = lobby.ReverseSlots
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .Select(kv => new AnonAnswer(kv.Key, kv.Value.Text))
+            .ToList();
+        var playerNames = lobby.Players.Select(p => p.DisplayName).ToList();
+        var styleSummaries = lobby.StyleSummaries.ToList();
+        var priorHistory = lobby.ReverseHistory.ToList();
+
+        var ctx = new AiGuessContext(
+            lobby.CurrentPrompt, round, anon, playerNames, styleSummaries, priorHistory);
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var result = await _guesser.GuessAsync(ctx, CancellationToken.None);
+                await ApplyReverseGuesses(lobby, round, result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Reverse guess task failed for lobby {Code}", code);
+            }
+        });
+    }
+
+    // Score the AI's guesses, bump per-player TimesReadByAi, extend the running tally + the
+    // cross-round history, then broadcast AiGuessesRevealed and open the short read window.
+    private async Task ApplyReverseGuesses(Lobby lobby, int round, AiGuessResult result)
+    {
+        AiGuessesRevealedDto? dto = null;
+        lock (lobby.Sync)
+        {
+            // Round moved on (game ended, reset, etc.) → drop it.
+            if (lobby.State != GameState.Revealing || lobby.RoundNumber != round)
+                return;
+
+            var revealed = new List<AiGuessDto>();
+            var roundCorrect = 0;
+            foreach (var g in result.Guesses)
+            {
+                if (!lobby.ReverseSlots.TryGetValue(g.AnswerId, out var slot)) continue;
+
+                var correct = string.Equals(g.GuessedName, slot.AuthorName, StringComparison.OrdinalIgnoreCase);
+                if (correct)
+                {
+                    roundCorrect++;
+                    var author = lobby.FindPlayerByName(slot.AuthorName);
+                    if (author != null) author.TimesReadByAi++;
+                }
+
+                lobby.ReverseHistory.Add(new PriorAttribution(
+                    round, slot.Text, g.GuessedName, slot.AuthorName, correct));
+                revealed.Add(new AiGuessDto(g.AnswerId, g.GuessedName, correct, slot.AuthorName, g.Taunt));
+            }
+
+            var roundTotal = revealed.Count;
+            lobby.ReverseCorrect += roundCorrect;
+            lobby.ReverseTotal += roundTotal;
+
+            // Guesses are in — give players a fixed window to read them, then the tick advances.
+            lobby.PhaseDeadlineUtc = DateTime.UtcNow + _timings.Reveal;
+
+            dto = new AiGuessesRevealedDto(
+                round, revealed, roundCorrect, roundTotal, lobby.ReverseCorrect, lobby.ReverseTotal);
+        }
+
+        if (dto != null)
+            await _hub.Clients.Group(lobby.Code).SendAsync("AiGuessesRevealed", dto);
+    }
+
+    // Reverse-mode outcome: the AI wins (AiGuesser) when it correctly attributed at least
+    // half of every answer across the game; otherwise the humans stayed hidden
+    // (HumansHidden). Integer half via *2 so a 3/6 lands exactly on the AI's side.
+    public static bool ReverseAiWon(int correct, int total) => total > 0 && correct * 2 >= total;
 
     // ---- Accusing ----
 
@@ -564,10 +737,18 @@ public class GameEngine : BackgroundService
     // Move to the next round, or end on the round cap.
     private void AdvanceAfterRound(Lobby lobby, List<Func<Task>> outbound)
     {
-        if (lobby.RoundNumber >= _timings.MaxRounds)
+        var cap = GameModes.IsReverse(lobby.Mode) ? ReverseRounds : _timings.MaxRounds;
+        if (lobby.RoundNumber >= cap)
         {
-            // 8 rounds passed with no successful accusation → AI survival win.
-            lobby.WinType = WinType.AiSurvival;
+            if (GameModes.IsReverse(lobby.Mode))
+                // 6 reverse rounds done: the AI wins if it read the group at least half the
+                // time, otherwise the humans stayed hidden.
+                lobby.WinType = ReverseAiWon(lobby.ReverseCorrect, lobby.ReverseTotal)
+                    ? WinType.AiGuesser
+                    : WinType.HumansHidden;
+            else
+                // 8 rounds passed with no successful accusation → AI survival win.
+                lobby.WinType = WinType.AiSurvival;
             EndGame(lobby, outbound);
             return;
         }
@@ -586,7 +767,9 @@ public class GameEngine : BackgroundService
         var dto = new GameEndedDto(
             WinType: lobby.WinType.ToString(),
             WinnerName: lobby.WinnerName,
-            AiRealIdentityName: lobby.AiDisplayName!,
+            // Reverse mode never seats a hidden AI, so there's no fake identity to unmask;
+            // "the AI" is a safe stand-in the client doesn't lean on for reverse endings.
+            AiRealIdentityName: lobby.AiDisplayName ?? "the AI",
             FullTranscript: transcript);
 
         var code = lobby.Code;
@@ -679,7 +862,7 @@ public class GameEngine : BackgroundService
         WinType WinType,
         string? WinnerUserId,
         DateTime StartedAt,
-        List<(string UserId, int Tokens, bool Eliminated, int VetoerCount)> Players,
+        List<(string UserId, int Tokens, bool Eliminated, int VetoerCount, int TimesReadByAi)> Players,
         List<(int Round, string? AuthorUserId, string DisplayName, string Text, DateTime SentAt)> Messages,
         List<(int Round, string Prompt)> RoundPrompts,
         HashSet<string> WrongAccuserUserIds,
@@ -692,7 +875,7 @@ public class GameEngine : BackgroundService
         WinnerUserId: lobby.WinnerUserId,
         StartedAt: lobby.StartedAtUtc,
         Players: lobby.Players
-            .Select(p => (p.UserId, p.TokensRemaining, p.IsEliminated, p.VetoerCount))
+            .Select(p => (p.UserId, p.TokensRemaining, p.IsEliminated, p.VetoerCount, p.TimesReadByAi))
             .ToList(),
         Messages: lobby.Transcript
             .Select(r => (r.Round, r.AuthorUserId, r.DisplayName, r.Text, r.SentAtUtc))
@@ -809,6 +992,12 @@ public class GameEngine : BackgroundService
                 if (aiSurvived)
                     s.AiSurvivalGamesWitnessed++;
             }
+
+            // Reverse mode (phase 22): every time the AI correctly attributed one of a
+            // player's answers to them this game, bump that player's TimesReadByAi.
+            foreach (var p in snap.Players)
+                if (p.TimesReadByAi > 0)
+                    StatsFor(p.UserId).TimesReadByAi += p.TimesReadByAi;
 
             if (snap.WinType == WinType.Detector && snap.WinnerUserId != null)
                 StatsFor(snap.WinnerUserId).DetectorWins++;

@@ -237,9 +237,28 @@ public class GameHub : Hub
         // samples but a missing/stale profile, regenerate it now (off the lock, awaited)
         // so the AI plays with the freshest notes. Best-effort — never blocks the start.
         var memberIds = new List<string>();
+        string mode;
+        List<(string UserId, string Name)> seats;
         lock (lobby.Sync)
+        {
             memberIds.AddRange(lobby.Players.Select(p => p.UserId));
+            mode = lobby.Mode;
+            seats = lobby.Players.Select(p => (p.UserId, p.DisplayName)).ToList();
+        }
         await _engine.RefreshStyleProfilesAsync(memberIds);
+
+        // Reverse mode (phase 22) needs real play history to read the group: every seat must
+        // be a signed-in (non-guest) user with at least 3 writing samples. Gate the start with
+        // a friendly message naming who isn't ready. Checked off the lock (DB reads) before we
+        // touch any lobby state.
+        if (GameModes.IsReverse(mode))
+        {
+            var notReady = await FindReverseNotReadyAsync(seats);
+            if (notReady.Count > 0)
+                throw new HubException(
+                    "reverse mode needs everyone signed in with some play history — not ready: "
+                    + string.Join(", ", notReady));
+        }
 
         // Cheat-card rewards (phase 18): read each member's oldest unconsumed cheat card
         // now (read-only). Under the lock below we bump those players to a 4th fake-out
@@ -304,6 +323,48 @@ public class GameHub : Hub
             await send();
     }
 
+    // Reverse mode needs at least this many writing samples per player for the AI to have a
+    // style to read.
+    private const int MinReverseSamples = 3;
+
+    // Which seats aren't ready for reverse mode: guests, or signed-in users with fewer than
+    // MinReverseSamples writing samples. Returns display names in seating order for the error.
+    private async Task<List<string>> FindReverseNotReadyAsync(List<(string UserId, string Name)> seats)
+    {
+        var ids = seats.Select(s => s.UserId).ToList();
+        try
+        {
+            var guestById = await _db.Users
+                .Where(u => ids.Contains(u.Id))
+                .Select(u => new { u.Id, u.IsGuest })
+                .ToDictionaryAsync(u => u.Id, u => u.IsGuest);
+
+            var sampleCounts = await _db.WritingSamples
+                .Where(s => ids.Contains(s.UserId))
+                .GroupBy(s => s.UserId)
+                .Select(g => new { UserId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.UserId, x => x.Count);
+
+            var notReady = new List<string>();
+            foreach (var (userId, name) in seats)
+            {
+                // Unknown user row → treat as a guest (not ready).
+                var isGuest = !guestById.TryGetValue(userId, out var g) || g;
+                var samples = sampleCounts.TryGetValue(userId, out var c) ? c : 0;
+                if (isGuest || samples < MinReverseSamples)
+                    notReady.Add(name);
+            }
+            return notReady;
+        }
+        catch (Exception ex)
+        {
+            // A dead DB shouldn't silently start a reverse game with no style data — fail
+            // closed by reporting everyone as not-ready.
+            _logger.LogWarning(ex, "reverse readiness check failed, blocking start");
+            return seats.Select(s => s.Name).ToList();
+        }
+    }
+
     // Oldest unconsumed cheat card per member (userId -> reward id). Read-only; the
     // caller stamps them consumed only after the start actually succeeds.
     private async Task<Dictionary<string, int>> LoadOldestCheatCardsAsync(List<string> memberIds)
@@ -345,12 +406,15 @@ public class GameHub : Hub
     // Host-only, pre-start only: pick the prompt pack, impostor difficulty, and answer
     // pace for this lobby. Broadcasts LobbyOptionsChanged so every client updates its
     // selectors live. All three keys are host-driven — nothing about them hints at the AI.
-    public async Task SetLobbyOptions(string packKey, string difficulty, string paceKey)
+    public async Task SetLobbyOptions(string packKey, string difficulty, string paceKey, string mode)
     {
         var lobby = FindLobbyForCaller() ?? throw new HubException("You're not in a lobby");
         packKey = (packKey ?? "").Trim();
         difficulty = (difficulty ?? "").Trim();
         paceKey = (paceKey ?? "").Trim();
+        // A client on the old 3-arg signature sends no mode — treat that as classic rather
+        // than rejecting it, so a stale tab never bricks the lobby.
+        mode = string.IsNullOrWhiteSpace(mode) ? GameModes.DefaultKey : mode.Trim();
 
         lock (lobby.Sync)
         {
@@ -364,25 +428,29 @@ public class GameHub : Hub
                 throw new HubException("Unknown difficulty");
             if (!PaceOptions.IsValidKey(paceKey))
                 throw new HubException("Unknown pace");
+            if (!GameModes.IsValidKey(mode))
+                throw new HubException("Unknown mode");
 
             lobby.PackKey = packKey;
             lobby.Difficulty = difficulty;
             lobby.PaceKey = paceKey;
+            lobby.Mode = mode;
             // Picking a normal pack clears any AI-built custom pack (and its saved code).
             lobby.CustomPack = null;
         }
 
         // Crew lobby: persist the new config back to the Crew row so the group always
         // "comes back to the same config". Fire-and-forget, off the lobby lock. Choosing a
-        // normal pack also wipes the crew's saved custom-pack code.
+        // normal pack also wipes the crew's saved custom-pack code. (Mode lives on the lobby
+        // and rides across a rematch there — it isn't a crew-persisted option.)
         int? crewId;
         lock (lobby.Sync) crewId = lobby.CrewId;
         if (crewId != null)
             PersistCrewOptions(crewId.Value, packKey, difficulty, paceKey, customPackCode: null);
 
-        _logger.LogInformation("Lobby {Code} options set to {Pack}/{Difficulty}/{Pace}",
-            lobby.Code, packKey, difficulty, paceKey);
-        await Clients.Group(lobby.Code).SendAsync("LobbyOptionsChanged", packKey, difficulty, paceKey, null);
+        _logger.LogInformation("Lobby {Code} options set to {Pack}/{Difficulty}/{Pace}/{Mode}",
+            lobby.Code, packKey, difficulty, paceKey, mode);
+        await Clients.Group(lobby.Code).SendAsync("LobbyOptionsChanged", packKey, difficulty, paceKey, null, mode);
     }
 
     // Host-only, pre-start only: install an AI-built custom pack from its signed share-code
@@ -419,7 +487,7 @@ public class GameHub : Hub
         _logger.LogInformation("Lobby {Code} set a custom pack ({Count} prompts)",
             lobby.Code, pack.Prompts.Length);
         await Clients.Group(lobby.Code)
-            .SendAsync("LobbyOptionsChanged", lobby.PackKey, lobby.Difficulty, lobby.PaceKey, pack.Name);
+            .SendAsync("LobbyOptionsChanged", lobby.PackKey, lobby.Difficulty, lobby.PaceKey, pack.Name, lobby.Mode);
     }
 
     // Host-only: set the room's chiptune mood (phase 21). Purely COSMETIC, so unlike the
@@ -689,7 +757,7 @@ public class GameHub : Hub
             dto = new LobbyStateDto(lobby.Code, lobby.State.ToString(), players,
                 lobby.PackKey, lobby.Difficulty, lobby.PaceKey, lobby.CrewName,
                 lobby.PackKey == PromptPacks.CustomKey ? lobby.CustomPack?.Name : null,
-                lobby.MusicMood);
+                lobby.MusicMood, lobby.Mode);
         }
         await Clients.Group(lobby.Code).SendAsync("LobbyUpdated", dto);
     }

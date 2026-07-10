@@ -254,10 +254,13 @@ builder.Services.AddSingleton<GameApi.GameLoop.GroupProfiler>();
 if (string.Equals(brainChoice, "Gemini", StringComparison.OrdinalIgnoreCase))
 {
     builder.Services.AddSingleton<GameApi.GameLoop.IAiBrain, GameApi.GameLoop.GeminiBrain>();
+    // Reverse mode's guesser (phase 22) rides the same failover chain as the impostor brain.
+    builder.Services.AddSingleton<GameApi.GameLoop.IAiGuesser, GameApi.GameLoop.GeminiGuesser>();
 }
 else
 {
     builder.Services.AddSingleton<GameApi.GameLoop.IAiBrain, GameApi.GameLoop.MockBrain>();
+    builder.Services.AddSingleton<GameApi.GameLoop.IAiGuesser, GameApi.GameLoop.MockGuesser>();
 }
 
 builder.Services.AddSingleton<GameApi.GameLoop.GameEngine>();

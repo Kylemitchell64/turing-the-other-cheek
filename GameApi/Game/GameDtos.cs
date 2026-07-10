@@ -22,3 +22,23 @@ public record GameEndedDto(
     string? WinnerName,
     string AiRealIdentityName,
     List<TranscriptMessageDto> FullTranscript);
+
+// ---- reverse mode (phase 22) ----
+
+// One anonymous, shuffled answer at a reverse reveal. Id is a stable per-round label
+// ("a","b","c",...); the author is deliberately NOT sent — the whole point is the group
+// guesses along with the AI.
+public record AnonAnswerDto(string Id, string Text);
+
+// ReverseRevealStarted payload: the shuffled anonymous answers, shown while the AI
+// "analyzes" before its guesses land.
+public record ReverseRevealStartedDto(int Round, string Prompt, List<AnonAnswerDto> Answers);
+
+// The AI's verdict for one answer id, revealed after analysis: who it guessed, whether it
+// was right, who ACTUALLY wrote it (revealed now — reverse has no hidden AI to protect),
+// and the taunt.
+public record AiGuessDto(string AnswerId, string GuessedName, bool Correct, string ActualName, string Taunt);
+
+// AiGuessesRevealed payload: every attribution for the round plus the running tally.
+public record AiGuessesRevealedDto(
+    int Round, List<AiGuessDto> Guesses, int RoundCorrect, int RoundTotal, int GameCorrect, int GameTotal);

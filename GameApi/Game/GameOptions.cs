@@ -53,6 +53,21 @@ public sealed record DifficultyProfile(
     };
 }
 
+// Game modes (phase 22). CLASSIC is the original hidden-impostor game. REVERSE flips it:
+// there is no impostor — everyone answers, and at each reveal the AI publicly guesses which
+// player wrote which (shuffled, anonymous) answer. Host-picked pre-start via SetLobbyOptions,
+// kept across a rematch like the other options.
+public static class GameModes
+{
+    public const string Classic = "classic";
+    public const string Reverse = "reverse";
+    public const string DefaultKey = Classic;
+
+    public static bool IsValidKey(string? key) => key is Classic or Reverse;
+    public static bool IsReverse(string? key) =>
+        string.Equals(key, Reverse, StringComparison.Ordinal);
+}
+
 // Answer-window presets the host can pick. Only the Prompting window changes —
 // reveal/accuse/veto windows stay at their spec durations.
 public static class PaceOptions

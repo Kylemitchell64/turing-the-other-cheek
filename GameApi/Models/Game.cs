@@ -4,6 +4,8 @@ public class Game
 {
     public int Id { get; set; }
     public string JoinCode { get; set; } = default!;
+    // "classic" | "reverse" (phase 22). Default classic so pre-feature rows read correctly.
+    public string Mode { get; set; } = "classic";
     public GameState State { get; set; }
     public string? WinnerUserId { get; set; }
     public WinType WinType { get; set; }

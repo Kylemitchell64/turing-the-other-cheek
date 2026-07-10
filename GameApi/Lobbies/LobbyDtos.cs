@@ -24,10 +24,12 @@ public record LobbyPlayerDto(
 // themselves never travel here — only the display name does.
 // MusicMood is a host-driven COSMETIC field (phase 21): the room's chiptune mood so late
 // joiners sync their player to whatever the host last picked. Reveals nothing about the AI.
+// Mode (phase 22) is the host-picked game mode ("classic" | "reverse"); host-driven, reveals
+// nothing about the AI.
 public record LobbyStateDto(
     string Code, string State, List<LobbyPlayerDto> Players,
     string PackKey, string Difficulty, string PaceKey, string? CrewName, string? CustomPackName,
-    string MusicMood);
+    string MusicMood, string Mode);
 
 // One entry in GameStarted(roster[]). Humans + the AI, indistinguishable.
 // Deliberately NO user id, NO isAi, NO isHost — just name + tokens + character.

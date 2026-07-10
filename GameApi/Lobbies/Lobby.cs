@@ -32,6 +32,11 @@ public class Lobby
     public string Difficulty { get; set; } = DifficultyProfile.DefaultKey;
     public string PaceKey { get; set; } = PaceOptions.DefaultKey;
 
+    // Game mode (phase 22): "classic" (hidden impostor) or "reverse" (no impostor — the AI
+    // reads everyone and guesses who wrote what). Host-picked pre-start with the other
+    // options; kept across a rematch like PackKey (ResetForNewGame leaves it alone).
+    public string Mode { get; set; } = GameModes.Classic;
+
     // Prompt indices already used this game, so a pack's prompts never repeat within
     // one game (cleared on a fresh game / rematch, and when a pack is exhausted).
     public HashSet<int> UsedPromptIndices { get; } = new();
@@ -109,6 +114,25 @@ public class Lobby
     // the AI system prompt (AI-DESIGN section 1).
     public List<string> StyleSummaries { get; } = new();
 
+    // ---- reverse mode (phase 22) live state ----
+
+    // The current round's shuffled anonymous answers, keyed by their reveal id ("a","b"...).
+    // Rebuilt each reverse reveal; carries the true author so the engine can score the AI's
+    // guesses (the author never goes over the wire until the guesses are revealed).
+    public Dictionary<string, ReverseSlot> ReverseSlots { get; } = new(StringComparer.Ordinal);
+
+    // Set once the attribution task has been kicked off for the current reveal, so the tick
+    // loop doesn't double-fire it. Cleared when a new reverse reveal opens.
+    public bool ReverseGuessRequested { get; set; }
+
+    // Running attribution tally across the whole game — the AI wins (AiGuesser) at >= 50%.
+    public int ReverseCorrect { get; set; }
+    public int ReverseTotal { get; set; }
+
+    // Confirmed attributions from earlier rounds, fed back into the next round's prompt so
+    // the guesser learns as it goes.
+    public List<PriorAttribution> ReverseHistory { get; } = new();
+
     // ---- accusation / veto / cooldown state ----
 
     // The locked-in accusation for the current Accusing round (first one wins).
@@ -174,14 +198,30 @@ public class Lobby
         WinnerUserId = null;
         WinnerName = null;
         StartedAtUtc = default;
+        // Mode intentionally preserved — a rematch keeps the host's chosen mode, like PackKey.
+        ReverseSlots.Clear();
+        ReverseGuessRequested = false;
+        ReverseCorrect = 0;
+        ReverseTotal = 0;
+        ReverseHistory.Clear();
 
         foreach (var p in Players)
         {
             p.TokensRemaining = 3;
             p.IsEliminated = false;
             p.VetoerCount = 0;
+            p.TimesReadByAi = 0;
         }
     }
+}
+
+// A shuffled anonymous answer slot for a reverse-mode reveal: the anon id maps to who
+// really wrote it (never sent live) and the answer text.
+public class ReverseSlot
+{
+    public string AuthorName { get; set; } = "";
+    public string? AuthorUserId { get; set; }
+    public string Text { get; set; } = "";
 }
 
 // An answer captured during the live round.
@@ -226,6 +266,10 @@ public class LobbyPlayer
     public bool IsEliminated { get; set; }
 
     public int VetoerCount { get; set; }
+
+    // Reverse mode (phase 22): how many of this player's answers the AI correctly attributed
+    // to them this game. Persisted into PlayerStats.TimesReadByAi at game end.
+    public int TimesReadByAi { get; set; }
 
     public bool IsConnected => ConnectionIds.Count > 0;
 

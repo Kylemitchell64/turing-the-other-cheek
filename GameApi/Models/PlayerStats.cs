@@ -9,4 +9,7 @@ public class PlayerStats
     public int GamesPlayed { get; set; }
     public int TimesFooled { get; set; }
     public int AiSurvivalGamesWitnessed { get; set; }
+    // Reverse mode (phase 22): how many times the AI correctly attributed one of this
+    // player's answers to them. Incremented per correct attribution against them.
+    public int TimesReadByAi { get; set; }
 }
