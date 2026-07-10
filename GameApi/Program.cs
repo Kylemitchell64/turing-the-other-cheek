@@ -127,8 +127,17 @@ builder.Services.AddRateLimiter(o =>
 
         var permits = context.RequestServices.GetRequiredService<IConfiguration>()
             .GetValue<int?>("RateLimit:PermitsPerMinute") ?? 30;
+        // Signed-in requests get their own per-user bucket; only anonymous traffic
+        // (login/register) shares the per-IP one. Without this, a living room full of
+        // phones on the same wifi is one IP splitting 30 requests a minute between
+        // them, and menus start 429ing with just three people (the phone sweep hit it).
+        var userId = context.User?.FindFirst(
+            System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var partitionKey = userId is not null
+            ? $"user:{userId}"
+            : $"ip:{context.Connection.RemoteIpAddress?.ToString() ?? "unknown"}";
         return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            partitionKey,
             factory: _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
             {
                 PermitLimit = permits,
@@ -313,8 +322,12 @@ app.Use(async (context, next) =>
 });
 
 app.UseRouting();
-app.UseRateLimiter();
+// Authentication runs BEFORE the rate limiter so the limiter can partition signed-in
+// traffic per user. Order matters: with the limiter first, context.User is empty and
+// everyone at a party (one wifi = one IP) shares a single 30/min bucket — the phone
+// sweep caught real 429s from three players just navigating menus.
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapControllers();

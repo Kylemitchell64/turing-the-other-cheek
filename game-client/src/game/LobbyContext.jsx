@@ -22,6 +22,11 @@ export function LobbyProvider({ children }) {
   const [round, setRound] = useState(null); // { number, prompt, deadlineUtc }
   const [phase, setPhase] = useState(null); // prompting | revealing | accusing | veto | ended
   const [reveal, setReveal] = useState(null); // { round, prompt, answers[] }
+  // Reverse mode (phase 22): the anonymous shuffled answers shown while the AI "analyzes"
+  // ({ round, prompt, answers:[{id,text}] }), and the attributions once they land
+  // ({ round, guesses:[{answerId,guessedName,correct,actualName,taunt}], roundCorrect, ... }).
+  const [reverseReveal, setReverseReveal] = useState(null);
+  const [aiGuesses, setAiGuesses] = useState(null);
   const [accusation, setAccusation] = useState(null); // { deadlineUtc, priorityName } while a window is open
   const [accusationMade, setAccusationMade] = useState(null); // { accuser, accused }
   const [vetoWindow, setVetoWindow] = useState(null); // { deadlineUtc } — only the eligible get this
@@ -37,6 +42,9 @@ export function LobbyProvider({ children }) {
   const [packKey, setPackKey] = useState(DEFAULT_PACK);
   const [difficulty, setDifficulty] = useState("normal");
   const [paceKey, setPaceKey] = useState("standard");
+  // Game mode (phase 22): "classic" (hidden impostor) or "reverse" (no impostor — the AI
+  // reads everyone and guesses who wrote what). Host-picked pre-start.
+  const [mode, setMode] = useState("classic");
   // The AI-built custom pack's title when packKey === "custom" (phase 20); null otherwise.
   const [customPackName, setCustomPackName] = useState(null);
 
@@ -93,6 +101,8 @@ export function LobbyProvider({ children }) {
         setCustomPackName(state?.customPackName ?? null);
         // Sync the room's music mood for late joiners (host-driven, cosmetic).
         if (state?.musicMood) setMusicMood(state.musicMood);
+        // Sync the game mode for late joiners.
+        if (state?.mode) setMode(state.mode);
       });
 
       conn.on("LobbyMusicChanged", (mood) => {
@@ -100,12 +110,13 @@ export function LobbyProvider({ children }) {
         log(`host set the music to ${mood}`);
       });
 
-      conn.on("LobbyOptionsChanged", (pack, diff, pace, custom) => {
+      conn.on("LobbyOptionsChanged", (pack, diff, pace, custom, m) => {
         setPackKey(pack);
         setDifficulty(diff);
         setPaceKey(pace);
         setCustomPackName(custom ?? null);
-        log(`options set to ${custom ? `custom:${custom}` : pack} / ${diff} / ${pace}`);
+        if (m) setMode(m);
+        log(`options set to ${custom ? `custom:${custom}` : pack} / ${diff} / ${pace} / ${m ?? "classic"}`);
       });
 
       conn.on("GameStarted", (r) => {
@@ -113,6 +124,8 @@ export function LobbyProvider({ children }) {
         setPhase("prompting");
         setEnded(null);
         setReveal(null);
+        setReverseReveal(null);
+        setAiGuesses(null);
         setEliminated([]);
         setWrongAccusers([]);
         setEvents([]);
@@ -159,6 +172,23 @@ export function LobbyProvider({ children }) {
           prev.some((h) => h.round === payload.round) ? prev : [...prev, payload]
         );
         log(`round ${payload.round} answers revealed`);
+      });
+
+      // Reverse mode: the shuffled anonymous answers, shown with an "analyzing" beat while
+      // we wait for the AI's guesses.
+      conn.on("ReverseRevealStarted", (payload) => {
+        setReverseReveal(payload);
+        setAiGuesses(null);
+        setPhase("revealing");
+        setTyping({}); // prompting over — drop any lingering bubbles
+        log(`round ${payload.round}: AI is analyzing ${payload.answers.length} answers`);
+      });
+
+      // Reverse mode: the AI's attributions land — who it guessed, whether it was right, and
+      // the taunt. Also carries the running accuracy tally.
+      conn.on("AiGuessesRevealed", (payload) => {
+        setAiGuesses(payload);
+        log(`round ${payload.round}: AI got ${payload.roundCorrect}/${payload.roundTotal} (game ${payload.gameCorrect}/${payload.gameTotal})`);
       });
 
       conn.on("AccusationWindowOpened", (deadlineUtc, priorityName) => {
@@ -256,20 +286,22 @@ export function LobbyProvider({ children }) {
     await conn.invoke("StartGame");
   }, [ensureConnected]);
 
-  // Host picks the lobby options pre-start (pack / difficulty / pace). Any omitted
+  // Host picks the lobby options pre-start (pack / difficulty / pace / mode). Any omitted
   // arg keeps its current value. Optimistically update locally; the server echoes
   // LobbyOptionsChanged to everyone (including us).
-  const setLobbyOptions = useCallback(async ({ pack, diff, pace } = {}) => {
+  const setLobbyOptions = useCallback(async ({ pack, diff, pace, mode: m } = {}) => {
     const p = pack ?? packKey;
     const d = diff ?? difficulty;
     const pc = pace ?? paceKey;
+    const md = m ?? mode;
     setPackKey(p);
     setDifficulty(d);
     setPaceKey(pc);
+    setMode(md);
     setCustomPackName(null); // picking a normal pack clears any custom one
     const conn = await ensureConnected();
-    await conn.invoke("SetLobbyOptions", p, d, pc);
-  }, [ensureConnected, packKey, difficulty, paceKey]);
+    await conn.invoke("SetLobbyOptions", p, d, pc, md);
+  }, [ensureConnected, packKey, difficulty, paceKey, mode]);
 
   // Install an AI-built custom pack from its signed share-code. The server decodes +
   // verifies it (a tampered code throws), sets packKey="custom", and echoes
@@ -323,6 +355,8 @@ export function LobbyProvider({ children }) {
     setRound(null);
     setPhase(null);
     setReveal(null);
+    setReverseReveal(null);
+    setAiGuesses(null);
     setAccusation(null);
     setAccusationMade(null);
     setVetoWindow(null);
@@ -338,6 +372,7 @@ export function LobbyProvider({ children }) {
     setPackKey(DEFAULT_PACK);
     setDifficulty("normal");
     setPaceKey("standard");
+    setMode("classic");
     setCustomPackName(null);
     setMusicMood("arcade");
     if (connRef.current) {
@@ -349,9 +384,9 @@ export function LobbyProvider({ children }) {
 
   const value = {
     status, lobby, crewCode, roster, error, setError,
-    round, phase, reveal, accusation, accusationMade,
+    round, phase, reveal, reverseReveal, aiGuesses, accusation, accusationMade,
     vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, events,
-    tokens, clockSkew, history, packKey, difficulty, paceKey, customPackName, typing,
+    tokens, clockSkew, history, packKey, difficulty, paceKey, mode, customPackName, typing,
     musicMood, setLobbyMusic,
     createLobby, joinLobby, createCrewLobby, setCrewCode, startGame, setLobbyOptions, setCustomPack, leaveLobby,
     submitAnswer, makeAccusation, useFakeOut, setTypingState,

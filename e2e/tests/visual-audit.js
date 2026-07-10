@@ -84,6 +84,15 @@ function scanForVisualIssues() {
   }
 
   // 4) Interactive elements overlapping each other (mis-taps waiting to happen).
+  // Controls inside a fixed-position layer (the music widget, toasts, modals) float
+  // OVER the page on purpose — geometric overlap with in-flow content is fine there,
+  // so those pairs are skipped.
+  const inFixedLayer = (el) => {
+    for (let p = el; p && p !== document.body; p = p.parentElement) {
+      if (getComputedStyle(p).position === 'fixed') return true;
+    }
+    return false;
+  };
   const clickables = all.filter(
     (el) =>
       (el.matches('button, a, input, select, textarea, [role="button"]')) &&
@@ -93,6 +102,7 @@ function scanForVisualIssues() {
     for (let j = i + 1; j < clickables.length; j++) {
       const a = clickables[i], b = clickables[j];
       if (a.contains(b) || b.contains(a)) continue;
+      if (inFixedLayer(a) !== inFixedLayer(b)) continue;
       const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
       const ox = Math.min(ra.right, rb.right) - Math.max(ra.left, rb.left);
       const oy = Math.min(ra.bottom, rb.bottom) - Math.max(ra.top, rb.top);

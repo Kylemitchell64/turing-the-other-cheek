@@ -5,6 +5,7 @@ import { useLobby } from "../game/LobbyContext";
 import CountdownRing from "../components/CountdownRing";
 import AccuseButton from "../components/AccuseButton";
 import Podium from "../sprites/Podium";
+import RobotSprite from "../sprites/RobotSprite";
 
 // Token pips for a player badge. Shows current tokens out of 3.
 function Tokens({ n }) {
@@ -35,12 +36,14 @@ function useIsWide() {
 export default function GamePage() {
   const { user } = useAuth();
   const {
-    roster, phase, round, reveal, accusation, accusationMade,
+    roster, phase, round, reveal, reverseReveal, aiGuesses, mode, accusation, accusationMade,
     vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, history,
     tokens, clockSkew, typing,
     leaveLobby, submitAnswer, makeAccusation, useFakeOut: sendFakeOut, startGame,
     setTypingState,
   } = useLobby();
+  const isReverse = mode === "reverse";
+  const maxRounds = isReverse ? 6 : 8;
   const navigate = useNavigate();
 
   const [answer, setAnswer] = useState("");
@@ -134,17 +137,32 @@ export default function GamePage() {
   // The current round's revealed answers (for the live accuse cards), if any.
   const current = reveal;
 
+  // Reverse mode: which players the AI read correctly this round (their answer's author
+  // matched its guess) — drives the podium reactions once the guesses land.
+  const readThisRound = new Set(
+    (aiGuesses?.guesses ?? []).filter((g) => g.correct).map((g) => g.actualName)
+  );
+
   // Map the live game events onto each podium's animation state. Everything here is
   // derived from what every client already knows — nothing about it distinguishes the
   // AI before the reveal (during Prompting a podium is "thinking" purely off that
   // player's typing indicator, which the AI fakes too).
   const podiumState = (name) => {
     if (phase === "ended" && ended) {
+      // Reverse endings (phase 22): humans celebrate if they stayed hidden, slump if read.
+      if (ended.winType === "HumansHidden") return "victorious";
+      if (ended.winType === "AiGuesser") return "sad";
       const detector = ended.winType === "Detector";
       if (detector && ended.winnerName === name) return "victorious";
       if (!detector && name === ended.aiRealIdentityName) return "victorious"; // AI survived (revealed)
       if (wrongAccusers.includes(name)) return "mad";
       return eliminated.includes(name) ? "defeated" : "sad";
+    }
+    // Reverse reveal: once the guesses land, a player who got read looks caught; one the
+    // AI whiffed on gloats. Before the guesses (analyzing) everyone sits neutral.
+    if (isReverse && phase === "revealing") {
+      if (!aiGuesses) return "neutral";
+      return readThisRound.has(name) ? "confused" : "excited";
     }
     if (fakeOut && name === fakeOut.vetoer) return "excited";
     if (phase === "veto") {
@@ -193,12 +211,14 @@ export default function GamePage() {
         <div className="game-grid">
           <div className="crt-head">
             {phase === "prompting"
-              ? `[ ROUND ${round?.number ?? 1} / 8 ]`
+              ? `[ ROUND ${round?.number ?? 1} / ${maxRounds} ]`
               : phase === "accusing"
                 ? "[ ACCUSE ]"
                 : phase === "veto"
                   ? "[ FAKE-OUT WINDOW ]"
-                  : "[ REVEAL ]"}
+                  : isReverse
+                    ? aiGuesses ? "[ THE VERDICT ]" : "[ ANALYZING ]"
+                    : "[ REVEAL ]"}
           </div>
 
           {/* PODIUM ROW — one chibi per roster member, the focal point */}
@@ -289,8 +309,12 @@ export default function GamePage() {
               </div>
             )}
 
-            {phase === "revealing" && (
+            {phase === "revealing" && !isReverse && (
               <p className="soon">// answers are in. accusation window opens next…</p>
+            )}
+
+            {phase === "revealing" && isReverse && (
+              <ReverseReveal reverseReveal={reverseReveal} aiGuesses={aiGuesses} myName={myName} />
             )}
 
             {phase === "accusing" && current && (
@@ -377,11 +401,113 @@ export default function GamePage() {
   );
 }
 
+// Reverse mode (phase 22) reveal: the shuffled anonymous answers while the AI "analyzes",
+// then each answer flips to show who it guessed, whether it read them, and the taunt.
+function ReverseReveal({ reverseReveal, aiGuesses, myName }) {
+  if (!reverseReveal) return null;
+  const answers = reverseReveal.answers ?? [];
+  const verdict = {};
+  for (const g of aiGuesses?.guesses ?? []) verdict[g.answerId] = g;
+
+  return (
+    <div className="reverse-reveal">
+      <div className="chat-prompt">
+        <span className="chat-r">round {reverseReveal.round}</span> {reverseReveal.prompt}
+      </div>
+
+      {!aiGuesses ? (
+        <div className="reverse-analyzing">
+          <RobotSprite size={64} />
+          <p className="reverse-analyzing-text">the AI is reading everyone<span className="cursor" /></p>
+          <p className="soon">// answers are anonymous. it's guessing who wrote each one…</p>
+        </div>
+      ) : (
+        <div className="reverse-tally">
+          it read <b>{aiGuesses.roundCorrect}/{aiGuesses.roundTotal}</b> this round
+          <span className="reverse-tally-game"> · game {aiGuesses.gameCorrect}/{aiGuesses.gameTotal}</span>
+        </div>
+      )}
+
+      <div className="reverse-grid">
+        {answers.map((a) => {
+          const v = verdict[a.id];
+          const mine = v && v.actualName === myName;
+          const cls = ["reverse-card", v ? (v.correct ? "read" : "hidden") : "pending", mine ? "mine" : ""]
+            .join(" ").trim();
+          return (
+            <div key={a.id} className={cls}>
+              <div className="reverse-card-head">
+                <span className="reverse-id">{a.id.toUpperCase()}</span>
+                {v && (
+                  <span className={`reverse-verdict ${v.correct ? "read" : "hidden"}`}>
+                    {v.correct ? "READ" : "HIDDEN"}
+                  </span>
+                )}
+              </div>
+              <div className="reverse-card-text">{a.text}</div>
+              {v && (
+                <div className="reverse-attr">
+                  <div className="reverse-guess">
+                    AI guessed <b>{v.guessedName}</b> · really <b>{v.actualName}</b>
+                  </div>
+                  <div className="reverse-taunt">“{v.taunt}”</div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // End screen: winner banner, AI reveal, transcript with the AI's lines highlighted,
 // this player's stat deltas, and a rematch button (host restarts the same lobby).
 function EndScreen({ ended, myName, roster, iWasFooled, onRematch, onLeave, msg }) {
+  const reverseEnd = ended.winType === "AiGuesser" || ended.winType === "HumansHidden";
   const detector = ended.winType === "Detector";
   const iWon = detector && ended.winnerName === myName;
+
+  // Reverse ending: the AI gloats if it read the room, the humans celebrate if they hid.
+  if (reverseEnd) {
+    const aiWon = ended.winType === "AiGuesser";
+    const myConfig = roster?.find((p) => p.displayName === myName)?.character;
+    return (
+      <div className="panel end">
+        <div className={`banner ${aiWon ? "banner-ai" : "banner-detector"}`}>
+          <h1 className="glow">{aiWon ? "[ THE AI READ THE ROOM ]" : "[ THE HUMANS STAYED HIDDEN ]"}</h1>
+          <div className="champion">
+            {aiWon
+              ? <RobotSprite size={84} />
+              : <Podium name={myName} config={myConfig} state="victorious" size={84} tokens={0} />}
+          </div>
+          <p className="tagline">
+            {aiWon
+              ? "it guessed who wrote what more often than not."
+              : "you kept the machine guessing."}
+          </p>
+        </div>
+
+        <h3 className="section">the whole transcript</h3>
+        <div className="transcript">
+          {ended.fullTranscript.map((m, i) => (
+            <div key={i} className="line">
+              <span className="ln-round">r{m.round}</span>
+              <span className="ln-name">{m.displayName}</span>
+              <span className="ln-text">{m.text}</span>
+            </div>
+          ))}
+        </div>
+
+        <h3 className="section">your stat deltas</h3>
+        <div className="reveal-box small">+1 game played</div>
+
+        {msg && <div className="error">{msg}</div>}
+        <button className="primary" onClick={onRematch}>rematch (same lobby)</button>
+        <button className="ghost" onClick={onLeave}>back home</button>
+      </div>
+    );
+  }
 
   // Per-viewer deltas, mirroring the server's PlayerStats increments: everyone who
   // finished a game gets +1 games played; the detector gets +1 detector win; when the

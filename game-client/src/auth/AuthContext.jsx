@@ -17,9 +17,34 @@ function isTokenExpired(token) {
   return Date.now() / 1000 > payload.exp;
 }
 
+// The JWT survives reloads via sessionStorage. Memory-only sounded clean but phones
+// killed it: mobile browsers discard background tabs constantly, and every discard
+// (or an accidental pull-to-refresh) dumped you back at the login screen mid-game.
+// sessionStorage is per-tab and dies with it, and expired tokens are rejected on load.
+const TOKEN_KEY = "ttoc-token";
+
+function loadStoredToken() {
+  try {
+    const t = sessionStorage.getItem(TOKEN_KEY);
+    if (t && !isTokenExpired(t)) return t;
+    if (t) sessionStorage.removeItem(TOKEN_KEY);
+  } catch { /* private mode / storage blocked — stay memory-only */ }
+  return null;
+}
+
+function storeToken(t) {
+  try {
+    if (t) sessionStorage.setItem(TOKEN_KEY, t);
+    else sessionStorage.removeItem(TOKEN_KEY);
+  } catch { /* private mode / storage blocked — stay memory-only */ }
+}
+
 export function AuthProvider({ children }) {
-  // JWT lives in memory only. Refresh reloads state, so nothing persists a stale token.
-  const [token, setToken] = useState(null);
+  const [token, setTokenState] = useState(loadStoredToken);
+  const setToken = useCallback((t) => {
+    storeToken(t);
+    setTokenState(t);
+  }, []);
 
   const login = useCallback(async (username, password) => {
     const res = await fetch(`${API_BASE}/api/auth/login`, {

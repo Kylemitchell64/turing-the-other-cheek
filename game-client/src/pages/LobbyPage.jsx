@@ -21,9 +21,16 @@ const PACES = [
   { key: "snail", label: "SNAIL 60s", blurb: "a full minute per question. for the overthinkers." },
 ];
 
+// Game mode (phase 22). Keys match the server's GameModes. REVERSE needs everyone signed
+// in with some play history — the server enforces that at start.
+const MODES = [
+  { key: "classic", label: "CLASSIC", blurb: "one of you is secretly the AI. answer, accuse, and don't get fooled." },
+  { key: "reverse", label: "REVERSE", blurb: "no impostor — the AI reads everyone's answers and guesses who wrote what. stay unpredictable." },
+];
+
 export default function LobbyPage() {
   const { user } = useAuth();
-  const { lobby, crewCode, roster, packKey, difficulty, paceKey, customPackName,
+  const { lobby, crewCode, roster, packKey, difficulty, paceKey, mode, customPackName,
     setLobbyOptions, setCustomPack, startGame, leaveLobby } = useLobby();
   const navigate = useNavigate();
 
@@ -81,6 +88,15 @@ export default function LobbyPage() {
       await setLobbyOptions({ pace: key });
     } catch (e) {
       setErr(e.message || "Couldn't change the pace");
+    }
+  };
+
+  const onPickMode = async (key) => {
+    if (key === mode) return;
+    try {
+      await setLobbyOptions({ mode: key });
+    } catch (e) {
+      setErr(e.message || "Couldn't change the mode");
     }
   };
 
@@ -224,6 +240,27 @@ export default function LobbyPage() {
             })}
           </div>
           <p className="pack-desc">{PACES.find((p) => p.key === paceKey)?.blurb}</p>
+        </div>
+
+        <div className="pack-picker">
+          <p className="pack-heading">// game mode</p>
+          <div className="segmented">
+            {MODES.map((m) => {
+              const selected = m.key === mode;
+              const cls = ["seg", selected ? "on" : "", amHost ? "" : "locked"].join(" ").trim();
+              return (
+                <button key={m.key} className={cls} onClick={() => amHost && onPickMode(m.key)}
+                  disabled={!amHost} aria-pressed={selected}>
+                  {m.label}
+                  {m.key === "classic" && <span className="seg-rec">[recommended]</span>}
+                </button>
+              );
+            })}
+          </div>
+          <p className="pack-desc">{MODES.find((m) => m.key === mode)?.blurb}</p>
+          {mode === "reverse" && (
+            <p className="pack-age">// everyone must be signed in with some play history</p>
+          )}
           {!amHost && <p className="soon">// the host picks the options</p>}
         </div>
 

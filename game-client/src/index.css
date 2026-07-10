@@ -241,7 +241,8 @@ button.link {
   cursor: pointer;
   text-transform: lowercase;
   text-decoration: underline;
-  padding: 0.2rem;
+  /* roomy enough to actually thumb on a phone (the phone sweep flagged 21px) */
+  padding: 0.55rem 0.6rem;
 }
 
 button.link:hover {
@@ -1170,8 +1171,9 @@ button.danger-btn {
 }
 
 button.layer-arrow {
-  width: 2rem;
-  height: 2rem;
+  /* 44px — phone-thumb sized (the sweep flagged the old 32px squares) */
+  width: 2.75rem;
+  height: 2.75rem;
   padding: 0;
   font-size: 1.05rem;
   line-height: 1;
@@ -1205,7 +1207,7 @@ button.about-toggle {
   text-align: left;
   background: transparent;
   border: none;
-  padding: 0.3rem 0;
+  padding: 0.7rem 0;
   color: var(--neon);
   font-size: 0.85rem;
   letter-spacing: 1px;
@@ -1806,6 +1808,9 @@ button.ops-pause { padding: 0.55rem 1rem; }
 .music-x {
   background: none; border: none; color: var(--muted); cursor: pointer;
   font-family: inherit; font-size: 0.9rem;
+  /* small glyph, big hitbox — 20x19 was un-tappable on a phone */
+  padding: 0.5rem 0.9rem;
+  margin: -0.5rem -0.9rem -0.5rem 0;
 }
 .music-x:hover { color: var(--neon); }
 .music-tip { margin: 0 0 0.5rem; color: var(--muted); font-size: 0.66rem; }
@@ -1817,7 +1822,7 @@ button.ops-pause { padding: 0.55rem 1rem; }
   margin-bottom: 0.5rem;
 }
 .music-mood {
-  padding: 0.35rem 0.2rem;
+  padding: 0.7rem 0.2rem;
   background: #060a08;
   border: 1px solid var(--neon-dim);
   border-radius: 5px;
@@ -1848,7 +1853,7 @@ button.ops-pause { padding: 0.55rem 1rem; }
 .music-row { display: flex; gap: 0.4rem; }
 .music-toggle {
   flex: 1;
-  padding: 0.35rem 0.2rem;
+  padding: 0.7rem 0.2rem;
   background: #060a08;
   border: 1px solid var(--neon-dim);
   border-radius: 5px;
@@ -1893,3 +1898,80 @@ button.ops-pause { padding: 0.55rem 1rem; }
 @media (prefers-reduced-motion: reduce) {
   .creator-idle { transition: none; transform: none !important; }
 }
+
+/* ---- reverse mode (phase 22): analyzing beat + attribution cards ---- */
+.reverse-reveal { display: flex; flex-direction: column; gap: 0.7rem; width: 100%; }
+
+.reverse-analyzing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.8rem 0;
+}
+.reverse-analyzing-text {
+  margin: 0;
+  color: var(--neon);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.9rem;
+}
+
+.reverse-tally {
+  text-align: center;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.reverse-tally-game { color: var(--muted); }
+
+.reverse-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.6rem;
+}
+
+.reverse-card {
+  padding: 0.55rem 0.7rem;
+  background: #060a08;
+  border: 1px solid var(--neon-dim);
+  border-radius: 8px;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.reverse-card.mine { outline: 1px dashed var(--neon-dim); }
+.reverse-card.read { border-color: var(--danger); box-shadow: 0 0 10px rgba(255, 59, 78, 0.25); }
+.reverse-card.hidden { border-color: var(--neon); box-shadow: 0 0 10px rgba(51, 255, 102, 0.2); }
+
+.reverse-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.reverse-id {
+  font-weight: bold;
+  color: var(--neon);
+  letter-spacing: 0.1em;
+}
+.reverse-verdict {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  padding: 0.05rem 0.4rem;
+  border-radius: 4px;
+}
+.reverse-verdict.read { color: var(--danger); border: 1px solid var(--danger); }
+.reverse-verdict.hidden { color: var(--neon); border: 1px solid var(--neon); }
+
+.reverse-card-text {
+  margin: 0.35rem 0 0.45rem;
+  font-size: 0.9rem;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.reverse-attr {
+  border-top: 1px dashed var(--neon-dim);
+  padding-top: 0.4rem;
+  font-size: 0.78rem;
+}
+.reverse-guess { color: var(--muted); }
+.reverse-guess b { color: var(--text); }
+.reverse-taunt { margin-top: 0.25rem; color: var(--neon); font-style: italic; }
