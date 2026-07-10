@@ -36,4 +36,16 @@ public class AuthResponse
     public string Token { get; set; } = default!;
     public string DisplayName { get; set; } = default!;
     public string Username { get; set; } = default!;
+
+    // Tier flags the client reads to steer the UX: guests see a light-profile note +
+    // get routed to the quick-play flow; a fresh OAuth account with no chosen name is
+    // sent to /choose-username first.
+    public bool IsGuest { get; set; }
+    public bool NeedsUsername { get; set; }
+}
+
+// POST /api/profile/username — a signed-in user (typically fresh OAuth) claims a name.
+public class ChooseUsernameRequest
+{
+    public string Username { get; set; } = default!;
 }

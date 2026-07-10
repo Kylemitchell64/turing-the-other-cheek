@@ -80,6 +80,7 @@ public class AuthController : ControllerBase
         if (!check.Succeeded)
             return Unauthorized(new { error = "Wrong username or password" });
 
+        await TouchLastSeenAsync(user);
         return Ok(BuildAuthResponse(user));
     }
 
@@ -96,7 +97,9 @@ public class AuthController : ControllerBase
         {
             id = user.Id,
             username = user.UserName,
-            displayName = user.DisplayName
+            displayName = user.DisplayName,
+            isGuest = user.IsGuest,
+            needsUsername = user.NeedsUsername
         });
     }
 
@@ -118,7 +121,9 @@ public class AuthController : ControllerBase
             if (!existing.IsGuest)
                 return Conflict(new { error = "that name is claimed, sign in instead" });
 
-            // Resume the existing guest — same style profile carries over.
+            // Resume the existing guest — same style profile carries over. Bump LastSeen
+            // so an active guest is never swept by the retention job.
+            await TouchLastSeenAsync(existing);
             return Ok(BuildAuthResponse(existing));
         }
 
@@ -126,7 +131,8 @@ public class AuthController : ControllerBase
         {
             UserName = username,
             DisplayName = username,
-            IsGuest = true
+            IsGuest = true,
+            LastSeenUtc = DateTime.UtcNow
         };
 
         // No password: passwordless account. CheckPasswordSignInAsync can never succeed
@@ -214,8 +220,15 @@ public class AuthController : ControllerBase
     {
         var existing = await _userManager.Users.FirstOrDefaultAsync(u =>
             u.ExternalProvider == identity.Provider && u.ExternalId == identity.ExternalId);
-        if (existing != null) return existing;
+        if (existing != null)
+        {
+            await TouchLastSeenAsync(existing);
+            return existing;
+        }
 
+        // Brand-new external account: it gets a placeholder UserName (unique, Identity
+        // needs one) but is flagged NeedsUsername so the client sends it to
+        // /choose-username before anything else — where it can also claim a prior guest.
         var username = await GenerateUniqueUsernameAsync(identity.DisplayNameHint ?? identity.Provider);
         var user = new ApplicationUser
         {
@@ -223,6 +236,8 @@ public class AuthController : ControllerBase
             DisplayName = identity.DisplayNameHint ?? username,
             Email = identity.Email,
             IsGuest = false,
+            NeedsUsername = true,
+            LastSeenUtc = DateTime.UtcNow,
             ExternalProvider = identity.Provider,
             ExternalId = identity.ExternalId
         };
@@ -269,13 +284,24 @@ public class AuthController : ControllerBase
         CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(a), Encoding.UTF8.GetBytes(b));
 
+    // Bump the account's last-active timestamp so the guest retention job never sweeps
+    // an account that's actually being used. Best-effort: a failed write just means the
+    // stamp is a little stale, never blocks the login.
+    private async Task TouchLastSeenAsync(ApplicationUser user)
+    {
+        user.LastSeenUtc = DateTime.UtcNow;
+        await _userManager.UpdateAsync(user);
+    }
+
     private AuthResponse BuildAuthResponse(ApplicationUser user)
     {
         return new AuthResponse
         {
             Token = GenerateJwt(user),
             DisplayName = user.DisplayName ?? user.UserName!,
-            Username = user.UserName!
+            Username = user.UserName!,
+            IsGuest = user.IsGuest,
+            NeedsUsername = user.NeedsUsername
         };
     }
 
@@ -289,7 +315,9 @@ public class AuthController : ControllerBase
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id),
             new Claim(ClaimTypes.Name, user.UserName!),
-            new Claim("displayName", user.DisplayName ?? user.UserName!)
+            new Claim("displayName", user.DisplayName ?? user.UserName!),
+            new Claim("isGuest", user.IsGuest ? "true" : "false"),
+            new Claim("needsUsername", user.NeedsUsername ? "true" : "false")
         };
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));

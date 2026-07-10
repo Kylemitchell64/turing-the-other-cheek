@@ -20,4 +20,14 @@ public class ApplicationUser : IdentityUser
     // never opened the creator, so they get the deterministic name-hash default. Guests
     // persist by username, so the same guest name later resumes the same character.
     public string? CharacterJson { get; set; }
+
+    // Last time this account was active (guest resume / login / OAuth callback / game
+    // end). Drives guest data retention: guest accounts idle past Retention:GuestDays
+    // get hard-deleted by the daily cleanup job. Null on rows created before phase 13.
+    public DateTime? LastSeenUtc { get; set; }
+
+    // A brand-new OAuth account that hasn't picked a display name yet. The client routes
+    // these to /choose-username before anything else; the username POST clears the flag
+    // (and can merge a prior guest identity). False for guest + password accounts.
+    public bool NeedsUsername { get; set; }
 }

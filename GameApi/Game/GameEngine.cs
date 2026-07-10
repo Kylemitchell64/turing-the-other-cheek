@@ -734,6 +734,15 @@ public class GameEngine : BackgroundService
             // AI-survival game every wrong-accuser +TimesFooled and every finisher
             // +AiSurvivalGamesWitnessed. Rows created lazily.
             var finisherIds = snap.Players.Select(p => p.UserId).Distinct().ToList();
+
+            // Playing a game counts as activity — bump LastSeen for every finisher so a
+            // guest who's still playing is never swept by the retention job.
+            var finisherUsers = await db.Users
+                .Where(u => finisherIds.Contains(u.Id))
+                .ToListAsync();
+            foreach (var u in finisherUsers)
+                u.LastSeenUtc = DateTime.UtcNow;
+
             var existing = await db.PlayerStats
                 .Where(s => finisherIds.Contains(s.UserId))
                 .ToDictionaryAsync(s => s.UserId);

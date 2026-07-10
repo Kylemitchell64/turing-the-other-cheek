@@ -175,6 +175,11 @@ else
 builder.Services.AddSingleton<GameApi.GameLoop.GameEngine>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<GameApi.GameLoop.GameEngine>());
 
+// Daily guest-retention sweep (config Retention:GuestDays, default 30). Singleton +
+// hosted so the integration tests can resolve it and drive PurgeStaleGuestsAsync directly.
+builder.Services.AddSingleton<GameApi.Retention.GuestRetentionService>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<GameApi.Retention.GuestRetentionService>());
+
 builder.Services
     .AddControllers(options => options.ReturnHttpNotAcceptable = true)
     .AddJsonOptions(options =>
