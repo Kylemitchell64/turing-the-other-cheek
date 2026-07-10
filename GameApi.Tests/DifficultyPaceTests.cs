@@ -164,7 +164,7 @@ public class DifficultyPaceTests
     }
 
     [Fact]
-    public void PostProcessing_FlagsGateConformanceAndTypos()
+    public async Task PostProcessing_FlagsGateConformanceAndTypos()
     {
         var rng = new Random(3);
         var stats = new GroupStats(60, 1.0, 0.0, 0.25); // group all-lowercase, never ends with period, typo-heavy
@@ -172,9 +172,9 @@ public class DifficultyPaceTests
         // conformToGroup off: an uppercase start with a trailing period survives untouched.
         for (var i = 0; i < 20; i++)
         {
-            var kept = AnswerPostProcessor.ProcessAsync(
+            var kept = await AnswerPostProcessor.ProcessAsync(
                 "My answer is simple.", stats, rng, reroll: null, CancellationToken.None,
-                conformToGroup: false, injectTypos: false).Result;
+                conformToGroup: false, injectTypos: false);
             Assert.Equal("My answer is simple.", kept);
         }
     }
