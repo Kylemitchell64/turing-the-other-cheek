@@ -51,7 +51,11 @@ public record AiTurnContext(
     string Difficulty = DifficultyProfile.DefaultKey,
     // The full answer window for this lobby's pace, so the timing model scales its
     // human-ish bands to it (TimeRemaining is just what's LEFT when we were asked).
-    double WindowSeconds = 30.0);
+    double WindowSeconds = 30.0,
+    // Rendered GROUP NOTES for a crew game (phase 19): what the AI has learned about how
+    // this exact group plays. Injected into the system prompt verbatim, only when non-null.
+    // Set only on NORMAL/HARD crew games — EASY never gets it, ordinary lobbies leave it null.
+    string? GroupNotes = null);
 
 // The AI player. GeminiBrain is the real impl (API, backoff, canned fallback);
 // MockBrain backs the tests. Async + cancellation so a real HTTP call can be

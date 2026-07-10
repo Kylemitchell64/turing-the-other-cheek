@@ -242,6 +242,9 @@ builder.Services.AddSingleton<GameApi.GameLoop.AiTextProvider>(sp =>
 builder.Services.AddSingleton<GameApi.GameLoop.IAiTextProvider>(sp =>
     sp.GetRequiredService<GameApi.GameLoop.AiTextProvider>());
 builder.Services.AddSingleton<GameApi.GameLoop.StyleSummarizer>();
+// Crew group profiler (phase 19): learns how a specific crew plays together, off the same
+// AI chain. Fired fire-and-forget after each crew game; no-ops when no leg has a key.
+builder.Services.AddSingleton<GameApi.GameLoop.GroupProfiler>();
 
 if (string.Equals(brainChoice, "Gemini", StringComparison.OrdinalIgnoreCase))
 {

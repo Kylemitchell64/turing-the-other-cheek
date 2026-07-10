@@ -121,6 +121,12 @@ public class GeminiBrain : IAiBrain
             .Replace("{{previousOwnAnswers}}", ownAnswers)
             .Replace("{{currentPrompt}}", ctx.CurrentPrompt);
 
+        // Crew game (phase 19): inject the learned GROUP NOTES block. Only ever set on
+        // NORMAL/HARD crew games (EASY returns above before reaching here), so the sharpest
+        // group knowledge rides only with the disguise that can use it.
+        if (!string.IsNullOrWhiteSpace(ctx.GroupNotes))
+            filled += "\n\n" + ctx.GroupNotes;
+
         return AppendConditionalLines(filled, ctx);
     }
 

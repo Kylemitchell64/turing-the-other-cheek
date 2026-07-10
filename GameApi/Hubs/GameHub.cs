@@ -24,14 +24,17 @@ public class GameHub : Hub
     private readonly GameEngine _engine;
     private readonly GameContext _db;
     private readonly MaintenanceState _maintenance;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<GameHub> _logger;
 
-    public GameHub(LobbyStore store, GameEngine engine, GameContext db, MaintenanceState maintenance, ILogger<GameHub> logger)
+    public GameHub(LobbyStore store, GameEngine engine, GameContext db, MaintenanceState maintenance,
+        IServiceScopeFactory scopeFactory, ILogger<GameHub> logger)
     {
         _store = store;
         _engine = engine;
         _db = db;
         _maintenance = maintenance;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
@@ -55,6 +58,9 @@ public class GameHub : Hub
         ?? Context.User?.FindFirstValue(ClaimTypes.Name)
         ?? "player";
 
+    private bool IsGuestCaller =>
+        string.Equals(Context.User?.FindFirstValue("isGuest"), "true", StringComparison.OrdinalIgnoreCase);
+
     // Host opens a new lobby and is seated as the first player.
     public async Task CreateLobby()
     {
@@ -74,13 +80,107 @@ public class GameHub : Hub
         await BroadcastLobby(lobby);
     }
 
+    // Open the live lobby for a crew (phase 19). Seeds a fresh in-memory lobby from the
+    // crew's saved config and stamps it with the crew id/name so only members can join and
+    // option changes persist back. If a live lobby for this crew is already open (someone
+    // else already tapped in), the caller folds into it instead of spawning a duplicate.
+    public async Task CreateCrewLobby(int crewId)
+    {
+        ThrowIfMaintenance();
+        if (IsGuestCaller)
+            throw new HubException("sign in to use crews");
+
+        var crew = await _db.Crews
+            .Include(c => c.Members)
+            .FirstOrDefaultAsync(c => c.Id == crewId);
+        if (crew == null)
+            throw new HubException("that crew doesn't exist");
+        if (crew.Members.All(m => m.UserId != UserId))
+            throw new HubException("you're not in that crew");
+
+        var characterJson = await LoadCharacterJsonAsync(UserId);
+
+        var lobby = FindOpenCrewLobby(crewId);
+        if (lobby == null)
+        {
+            lobby = _store.Create(UserId);
+            lock (lobby.Sync)
+            {
+                lobby.CrewId = crew.Id;
+                lobby.CrewName = crew.Name;
+                lobby.PackKey = crew.PackKey;
+                lobby.Difficulty = crew.Difficulty;
+                lobby.PaceKey = crew.PaceKey;
+
+                var player = new LobbyPlayer { UserId = UserId, DisplayName = DisplayName, CharacterJson = characterJson };
+                player.ConnectionIds.Add(Context.ConnectionId);
+                lobby.Players.Add(player);
+            }
+        }
+        else
+        {
+            lock (lobby.Sync)
+            {
+                if (lobby.Players.Count >= 8 && lobby.FindPlayer(UserId) == null)
+                    throw new HubException("That lobby is full");
+
+                var existing = lobby.FindPlayer(UserId);
+                if (existing != null)
+                {
+                    existing.ConnectionIds.Add(Context.ConnectionId);
+                    existing.CharacterJson = characterJson;
+                }
+                else
+                {
+                    var player = new LobbyPlayer { UserId = UserId, DisplayName = DisplayName, CharacterJson = characterJson };
+                    player.ConnectionIds.Add(Context.ConnectionId);
+                    lobby.Players.Add(player);
+                }
+            }
+        }
+
+        await Groups.AddToGroupAsync(Context.ConnectionId, lobby.Code);
+        _logger.LogInformation("Crew {CrewId} lobby {Code} entered by {User}", crewId, lobby.Code, UserId);
+        await BroadcastLobby(lobby);
+    }
+
+    // The still-open (pre-start) live lobby for this crew, if any.
+    private Lobby? FindOpenCrewLobby(int crewId)
+    {
+        foreach (var lobby in _store.All)
+        {
+            lock (lobby.Sync)
+            {
+                if (lobby.CrewId == crewId && lobby.State == GameState.Lobby)
+                    return lobby;
+            }
+        }
+        return null;
+    }
+
     // Join an existing lobby by code. Reconnects (same userId) fold back into the
     // existing seat rather than creating a duplicate.
     public async Task JoinLobby(string code)
     {
         ThrowIfMaintenance();
         code = (code ?? "").Trim().ToUpperInvariant();
-        var lobby = _store.Get(code) ?? throw new HubException("No lobby with that code");
+        var lobby = _store.Get(code);
+        if (lobby == null)
+        {
+            // Crew codes live in a DIFFERENT namespace (they resolve via CreateCrewLobby).
+            // If the typed code is a crew's persistent code, point the player at the right door.
+            if (await _db.Crews.AnyAsync(c => c.JoinCode == code))
+                throw new HubException("that's a crew code — open it from your crews list");
+            throw new HubException("No lobby with that code");
+        }
+
+        // A crew lobby is members-only: non-members get bounced with a clear message.
+        int? crewId;
+        lock (lobby.Sync) crewId = lobby.CrewId;
+        if (crewId != null &&
+            !await _db.CrewMembers.AnyAsync(m => m.CrewId == crewId.Value && m.UserId == UserId))
+            throw new HubException("that's a crew game — only crew members can join");
+
         var characterJson = await LoadCharacterJsonAsync(UserId);
 
         lock (lobby.Sync)
@@ -258,9 +358,41 @@ public class GameHub : Hub
             lobby.PaceKey = paceKey;
         }
 
+        // Crew lobby: persist the new config back to the Crew row so the group always
+        // "comes back to the same config". Fire-and-forget, off the lobby lock.
+        int? crewId;
+        lock (lobby.Sync) crewId = lobby.CrewId;
+        if (crewId != null)
+            PersistCrewOptions(crewId.Value, packKey, difficulty, paceKey);
+
         _logger.LogInformation("Lobby {Code} options set to {Pack}/{Difficulty}/{Pace}",
             lobby.Code, packKey, difficulty, paceKey);
         await Clients.Group(lobby.Code).SendAsync("LobbyOptionsChanged", packKey, difficulty, paceKey);
+    }
+
+    // Write a crew lobby's freshly-picked options back to its Crew row. Fire-and-forget on
+    // a fresh scope (the hub's own DbContext is gone once the method returns); a failure
+    // just means the saved config lags a game — never blocks the live option change.
+    private void PersistCrewOptions(int crewId, string pack, string difficulty, string pace)
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<GameContext>();
+                var crew = await db.Crews.FirstOrDefaultAsync(c => c.Id == crewId);
+                if (crew == null) return;
+                crew.PackKey = pack;
+                crew.Difficulty = difficulty;
+                crew.PaceKey = pace;
+                await db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "persisting crew {CrewId} options failed", crewId);
+            }
+        });
     }
 
     // Submit this player's answer for the current round. 280-char cap, one per

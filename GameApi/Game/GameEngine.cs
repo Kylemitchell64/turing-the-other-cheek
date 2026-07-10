@@ -22,6 +22,7 @@ public class GameEngine : BackgroundService
     private readonly IAiBrain _brain;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly StyleSummarizer _summarizer;
+    private readonly GroupProfiler _groupProfiler;
     private readonly GameTimings _timings;
     private readonly ILogger<GameEngine> _logger;
 
@@ -31,6 +32,7 @@ public class GameEngine : BackgroundService
         IAiBrain brain,
         IServiceScopeFactory scopeFactory,
         StyleSummarizer summarizer,
+        GroupProfiler groupProfiler,
         GameTimings timings,
         ILogger<GameEngine> logger)
     {
@@ -39,6 +41,7 @@ public class GameEngine : BackgroundService
         _brain = brain;
         _scopeFactory = scopeFactory;
         _summarizer = summarizer;
+        _groupProfiler = groupProfiler;
         _timings = timings;
         _logger = logger;
     }
@@ -69,7 +72,34 @@ public class GameEngine : BackgroundService
     {
         lobby.StartedAtUtc = DateTime.UtcNow;
         LoadStyleSummaries(lobby);
+        LoadGroupNotes(lobby);
         StartPromptingRound(lobby, roundNumber: 1, outbound);
+    }
+
+    // Crew game (phase 19): load the crew's current GroupProfileJson and render it into the
+    // GROUP NOTES block the impostor plays with. NORMAL and HARD get it; EASY never does.
+    // Best-effort — any failure just means the AI plays without the group notes this game.
+    private void LoadGroupNotes(Lobby lobby)
+    {
+        lobby.GroupNotes = null;
+        if (lobby.CrewId == null) return;
+        if (DifficultyProfile.Get(lobby.Difficulty).EasyPersona) return; // EASY never gets them
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<GameContext>();
+            var json = db.Crews
+                .Where(c => c.Id == lobby.CrewId)
+                .Select(c => c.GroupProfileJson)
+                .FirstOrDefault();
+            lobby.GroupNotes = GroupProfiler.RenderNotes(json);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Loading group notes failed for lobby {Code}", lobby.Code);
+            lobby.GroupNotes = null;
+        }
     }
 
     // Load each human's StyleProfiles.SummaryJson (if any) into the lobby as
@@ -218,7 +248,8 @@ public class GameEngine : BackgroundService
             TimeRemaining: remaining,
             PackKey: lobby.PackKey,
             Difficulty: lobby.Difficulty,
-            WindowSeconds: PromptWindow(lobby).TotalSeconds);
+            WindowSeconds: PromptWindow(lobby).TotalSeconds,
+            GroupNotes: lobby.GroupNotes);
 
         _ = Task.Run(async () =>
         {
@@ -641,6 +672,7 @@ public class GameEngine : BackgroundService
 
     private record PersistSnapshot(
         string JoinCode,
+        int? CrewId,
         WinType WinType,
         string? WinnerUserId,
         DateTime StartedAt,
@@ -652,6 +684,7 @@ public class GameEngine : BackgroundService
 
     private static PersistSnapshot SnapshotForPersist(Lobby lobby) => new(
         JoinCode: lobby.Code,
+        CrewId: lobby.CrewId,
         WinType: lobby.WinType,
         WinnerUserId: lobby.WinnerUserId,
         StartedAt: lobby.StartedAtUtc,
@@ -781,6 +814,13 @@ public class GameEngine : BackgroundService
                 foreach (var userId in snap.WrongAccuserUserIds)
                     StatsFor(userId).TimesFooled++;
 
+            // Crew game (phase 19): count the game against the crew.
+            if (snap.CrewId != null)
+            {
+                var crew = await db.Crews.FirstOrDefaultAsync(c => c.Id == snap.CrewId.Value);
+                if (crew != null) crew.GamesPlayed++;
+            }
+
             await db.SaveChangesAsync();
 
             // Enforce the per-tier sample cap for everyone who just had answers harvested
@@ -805,6 +845,23 @@ public class GameEngine : BackgroundService
             {
                 var toRefresh = harvestedUserIds.ToList();
                 _ = Task.Run(() => _summarizer.RefreshStaleProfilesAsync(toRefresh));
+            }
+
+            // ---- fire-and-forget GROUP profile update (phase 19): feed this crew game's
+            // human answers (+ the stored prior) to the AI chain to refine the group notes.
+            // Same discipline as the style job — off the loop, swallows its own failures.
+            if (snap.CrewId != null)
+            {
+                var answerLines = snap.Messages
+                    .Where(m => m.AuthorUserId != null && m.Text != "(no answer)")
+                    .OrderBy(m => m.Round)
+                    .Select(m => $"{m.DisplayName}: {m.Text}")
+                    .ToList();
+                if (answerLines.Count > 0)
+                {
+                    var crewId = snap.CrewId.Value;
+                    _ = Task.Run(() => _groupProfiler.UpdateAfterGameAsync(crewId, answerLines));
+                }
             }
         }
         catch (Exception ex)
