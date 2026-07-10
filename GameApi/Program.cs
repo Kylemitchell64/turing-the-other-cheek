@@ -119,6 +119,12 @@ builder.Services.AddRateLimiter(o =>
         if (context.Request.Path.StartsWithSegments("/api/admin"))
             return System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter("admin");
 
+        // Public maintenance probe — the client banners off it and polls it on a timer
+        // (login + home). It leaks nothing, so exempt it rather than have every client
+        // burn its request budget on status checks.
+        if (context.Request.Path.StartsWithSegments("/api/status"))
+            return System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter("status");
+
         var permits = context.RequestServices.GetRequiredService<IConfiguration>()
             .GetValue<int?>("RateLimit:PermitsPerMinute") ?? 30;
         return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
