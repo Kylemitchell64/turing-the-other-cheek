@@ -30,8 +30,24 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServerOptions>(o =>
     o.Limits.MaxRequestBodySize = 100_000);
 
-builder.Services.AddDbContext<GameContext>(options =>
-    options.UseNpgsql(connectionString));
+// DB provider. Production ALWAYS uses Npgsql. A Development-only escape hatch
+// (UseInMemoryDb=true) swaps in EF InMemory so the API can boot with no Postgres —
+// used by the Playwright E2E and local smoke runs, mirroring GameApi.Tests/TestAppFactory.
+// The flag is read ONLY when the environment is Development, so it can never flip the
+// prod path onto a throwaway in-memory store even if the env var leaks into production.
+var useInMemoryDb = builder.Environment.IsDevelopment()
+    && builder.Configuration.GetValue<bool>("UseInMemoryDb");
+
+if (useInMemoryDb)
+{
+    builder.Services.AddDbContext<GameContext>(options =>
+        options.UseInMemoryDatabase("turing-dev"));
+}
+else
+{
+    builder.Services.AddDbContext<GameContext>(options =>
+        options.UseNpgsql(connectionString));
+}
 
 // ASP.NET Core Identity — username/password
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(o =>
