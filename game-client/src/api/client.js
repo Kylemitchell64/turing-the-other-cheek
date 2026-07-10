@@ -39,6 +39,8 @@ export const api = {
   // Character: GET returns the saved config or null; PUT saves it (server validates).
   getCharacter: (token) => request("/api/profile/character", { token }),
   putCharacter: (token, config) => request("/api/profile/character", { method: "PUT", token, body: config }),
+  // Rewards the signed-in player holds: unlocked premium outfit/accessory ids + cheat cards.
+  getRewards: (token) => request("/api/profile/rewards", { token }),
 };
 
 // Estimate client clock skew (ms) vs the server using the HTTP Date response header,

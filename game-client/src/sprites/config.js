@@ -8,6 +8,12 @@ export const HAIR_COUNT = 10;
 export const OUTFIT_COUNT = 10;
 export const ACCESSORY_COUNT = 6; // 0..5, plus null for "none"
 
+// The free set everyone can save without a reward — mirrors CharacterDefaults on the server.
+// Outfits 6..9 and accessories 3..5 are "premium": reward-locked in the creator, and the
+// server's PUT /profile/character revalidates the same gate. Kept in sync by CharacterHashTests.
+export const FREE_OUTFIT_COUNT = 6;
+export const FREE_ACCESSORY_COUNT = 3;
+
 // FNV-1a — small, fast, stable across browsers (no crypto needed here).
 function hashName(name) {
   let h = 0x811c9dc5;

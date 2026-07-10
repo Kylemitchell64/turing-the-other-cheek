@@ -1142,6 +1142,24 @@ button.danger-btn {
   font-size: 0.8rem;
   letter-spacing: 1px;
   color: var(--neon);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* premium reward markers on the outfit / accessory rows */
+.layer-lock {
+  font-size: 0.62rem;
+  letter-spacing: 0.5px;
+  color: var(--amber);
+  text-transform: lowercase;
+}
+.layer-reward {
+  font-size: 0.62rem;
+  letter-spacing: 0.5px;
+  color: var(--neon);
+  text-shadow: 0 0 6px rgba(51, 255, 102, 0.6);
+  text-transform: lowercase;
 }
 
 .layer-cycler {

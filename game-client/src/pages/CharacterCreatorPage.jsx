@@ -8,6 +8,7 @@ import CharacterSprite from "../sprites/CharacterSprite";
 import {
   configFromName, normalizeConfig,
   BASE_COUNT, HAIR_COUNT, OUTFIT_COUNT, ACCESSORY_COUNT,
+  FREE_OUTFIT_COUNT, FREE_ACCESSORY_COUNT,
 } from "../sprites/config";
 
 // Accessory cycles through "none" (null) plus each real accessory index.
@@ -41,6 +42,10 @@ export default function CharacterCreatorPage() {
   const [config, setConfig] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  // Reward-unlocked premium ids (empty until the fetch lands, so premium stays locked by
+  // default). Sets, so lookups in the cycler/lock markers are O(1).
+  const [unlockedOutfits, setUnlockedOutfits] = useState(() => new Set());
+  const [unlockedAccessories, setUnlockedAccessories] = useState(() => new Set());
 
   // Prefill: the saved config if there is one, otherwise the name-hash default so the
   // creator always opens on the exact character they'd have had by default.
@@ -54,15 +59,58 @@ export default function CharacterCreatorPage() {
     return () => { alive = false; };
   }, [token, username]);
 
+  // Rewards the player holds unlock the premium outfit/accessory ids for saving. A saved
+  // premium look still renders even without the reward (granted-then-revoked) — arrows just
+  // won't cycle back onto it, and the server revalidates on save anyway.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const { ok, data } = await api.getRewards(token);
+      if (!alive || !ok || !data) return;
+      setUnlockedOutfits(new Set(data.unlockedOutfits || []));
+      setUnlockedAccessories(new Set(data.unlockedAccessories || []));
+    })();
+    return () => { alive = false; };
+  }, [token]);
+
+  // Which ids may the arrows rest on: the free set plus anything a reward unlocked.
+  const outfitAllowed = (i) => i < FREE_OUTFIT_COUNT || unlockedOutfits.has(i);
+  const accessoryAllowed = (i) =>
+    i === null || i < FREE_ACCESSORY_COUNT || unlockedAccessories.has(i);
+
+  // Lock state of the currently-shown value: "locked" (premium, not owned — only reachable
+  // as a saved config), "unlocked" (premium reward the player owns), or null (free).
+  const lockFor = (key) => {
+    if (!config) return null;
+    if (key === "outfit" && config.outfit >= FREE_OUTFIT_COUNT)
+      return unlockedOutfits.has(config.outfit) ? "unlocked" : "locked";
+    if (key === "accessory" && config.accessory !== null && config.accessory >= FREE_ACCESSORY_COUNT)
+      return unlockedAccessories.has(config.accessory) ? "unlocked" : "locked";
+    return null;
+  };
+
   const cycle = (key, dir) => {
     setConfig((c) => {
       if (!c) return c;
       if (key === "accessory") {
-        const idx = ACCESSORY_OPTIONS.findIndex((v) => v === c.accessory);
-        const next = (idx + dir + ACCESSORY_OPTIONS.length) % ACCESSORY_OPTIONS.length;
-        return { ...c, accessory: ACCESSORY_OPTIONS[next] };
+        const len = ACCESSORY_OPTIONS.length;
+        let idx = ACCESSORY_OPTIONS.findIndex((v) => v === c.accessory);
+        // Step past any locked premium accessory, landing on the next allowed one.
+        for (let guard = 0; guard < len; guard++) {
+          idx = (idx + dir + len) % len;
+          if (accessoryAllowed(ACCESSORY_OPTIONS[idx])) break;
+        }
+        return { ...c, accessory: ACCESSORY_OPTIONS[idx] };
       }
-      const counts = { base: BASE_COUNT, hair: HAIR_COUNT, outfit: OUTFIT_COUNT };
+      if (key === "outfit") {
+        let next = c.outfit;
+        for (let guard = 0; guard < OUTFIT_COUNT; guard++) {
+          next = (next + dir + OUTFIT_COUNT) % OUTFIT_COUNT;
+          if (outfitAllowed(next)) break;
+        }
+        return { ...c, outfit: next };
+      }
+      const counts = { base: BASE_COUNT, hair: HAIR_COUNT };
       const n = counts[key];
       return { ...c, [key]: (c[key] + dir + n) % n };
     });
@@ -120,9 +168,15 @@ export default function CharacterCreatorPage() {
         <p className="creator-who">CHARACTER: <b>{username}</b></p>
 
         <div className="layers">
-          {LAYERS.map((layer) => (
+          {LAYERS.map((layer) => {
+            const lock = lockFor(layer.key);
+            return (
             <div key={layer.key} className="layer-row">
-              <span className="layer-label">{layer.label}</span>
+              <span className="layer-label">
+                {layer.label}
+                {lock === "locked" && <span className="layer-lock">[locked]</span>}
+                {lock === "unlocked" && <span className="layer-reward">[reward]</span>}
+              </span>
               <div className="layer-cycler">
                 <button
                   type="button"
@@ -145,7 +199,8 @@ export default function CharacterCreatorPage() {
                 </button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {err && <div className="error">{err}</div>}
