@@ -187,8 +187,11 @@ builder.Services.AddSingleton<GameApi.GameLoop.AiTextProvider>(sp =>
             "groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", "GROQ_API_KEY",
             GameApi.GameLoop.QuotaReset.UtcMidnight, httpFactory, cfg,
             lf.CreateLogger<GameApi.GameLoop.OpenAiCompatClient>()),
+        // NB: Cerebras' catalog has no llama-3.3-70b; gemma-4-31b is a standard instruct
+        // model that returns message.content (their gpt-oss / glm ids are reasoning models
+        // that put text in a separate "reasoning" field). Verified live 2026-07-10.
         new GameApi.GameLoop.OpenAiCompatClient(
-            "cerebras", "https://api.cerebras.ai/v1", "llama-3.3-70b", "CEREBRAS_API_KEY",
+            "cerebras", "https://api.cerebras.ai/v1", "gemma-4-31b", "CEREBRAS_API_KEY",
             GameApi.GameLoop.QuotaReset.UtcMidnight, httpFactory, cfg,
             lf.CreateLogger<GameApi.GameLoop.OpenAiCompatClient>()),
     };
