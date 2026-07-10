@@ -190,7 +190,7 @@ public class PromptPackTests : IClassFixture<TestAppFactory>
             host.On<LobbyState>("LobbyUpdated", s => hostState = s);
             foreach (var c in conns)
             {
-                c.On<string, string, string>("LobbyOptionsChanged", (p, _d, _pc) => seenPack = p);
+                c.On<string, string, string, string?>("LobbyOptionsChanged", (p, _d, _pc, _cu) => seenPack = p);
                 c.On<string, int, DateTime>("PromptStarted", (prompt, _, _2) => firstPrompt ??= prompt);
             }
 
