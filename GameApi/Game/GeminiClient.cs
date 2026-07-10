@@ -9,7 +9,10 @@ namespace GameApi.GameLoop;
 // request/response DTOs, key handling, and a single generateContent call all live here.
 // Callers layer their own retry/backoff policy on top (the brain does 1 retry with a
 // 6s budget; the summarizer does 1 retry on a parse failure).
-public class GeminiClient
+//
+// Also the Gemini leg of the AiTextProvider failover chain: implements IAiProviderLeg so
+// CallAsync surfaces a 429/quota distinctly from a transient failure.
+public class GeminiClient : IAiProviderLeg
 {
     private const string Model = "gemini-2.5-flash";
     private const string BaseUrl =
@@ -17,6 +20,9 @@ public class GeminiClient
 
     private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<GeminiClient> _logger;
+
+    public string ProviderName => "gemini";
+    public QuotaReset QuotaReset => QuotaReset.PacificMidnight; // free-tier RPD resets midnight Pacific
 
     public string? ApiKey { get; }
     public bool HasKey => !string.IsNullOrEmpty(ApiKey);
@@ -33,6 +39,11 @@ public class GeminiClient
     // A single generateContent call. Returns the text on 200, null on any failure.
     // temperature/maxTokens are per-call so the summarizer can run cooler than the brain.
     public async Task<string?> GenerateAsync(
+        string systemPrompt, string userPrompt, double temperature, int maxOutputTokens, CancellationToken ct) =>
+        (await CallAsync(systemPrompt, userPrompt, temperature, maxOutputTokens, ct)).Text;
+
+    // The detailed leg call: Success(text) on 200, RateLimited on 429/quota, Failed otherwise.
+    public async Task<AiCallResult> CallAsync(
         string systemPrompt,
         string userPrompt,
         double temperature,
@@ -42,7 +53,7 @@ public class GeminiClient
         if (!HasKey)
         {
             _logger.LogWarning("GEMINI_API_KEY not configured");
-            return null;
+            return AiCallResult.Fail;
         }
 
         try
@@ -84,23 +95,29 @@ public class GeminiClient
             using var resp = await client.SendAsync(req, ct);
             if (!resp.IsSuccessStatusCode)
             {
+                if (resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                {
+                    var hasRetryInfo = resp.Headers.RetryAfter != null;
+                    _logger.LogWarning("Gemini 429 rate-limited (retryInfo={RetryInfo})", hasRetryInfo);
+                    return AiCallResult.Rate(hasRetryInfo);
+                }
                 _logger.LogWarning("Gemini HTTP {Status}", (int)resp.StatusCode);
-                return null;
+                return AiCallResult.Fail;
             }
 
             var respJson = await resp.Content.ReadAsStringAsync(ct);
             var parsed = JsonSerializer.Deserialize<GeminiResponse>(respJson, JsonOpts);
             var textOut = parsed?.Candidates?.FirstOrDefault()?.Content?.Parts?.FirstOrDefault()?.Text;
-            return string.IsNullOrWhiteSpace(textOut) ? null : textOut;
+            return string.IsNullOrWhiteSpace(textOut) ? AiCallResult.Fail : AiCallResult.Ok(textOut);
         }
         catch (OperationCanceledException)
         {
-            return null;
+            return AiCallResult.Fail;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Gemini request threw");
-            return null;
+            return AiCallResult.Fail;
         }
     }
 

@@ -151,19 +151,53 @@ builder.Services.AddSingleton(sp =>
     return t;
 });
 
-// Brain selection by config: "Ai:Brain" = "Gemini" | "Mock". Default to Gemini when
-// a GEMINI_API_KEY is present, otherwise the Mock (so a keyless run still works).
+// Brain selection by config: "Ai:Brain" = "Gemini" | "Mock". Default to the real brain
+// when ANY provider key is present (the failover chain works off whichever legs have a
+// key), otherwise the Mock (so a keyless run still works).
 var geminiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY")
     ?? builder.Configuration["GEMINI_API_KEY"]
     ?? builder.Configuration["Gemini:ApiKey"];
+var groqKey = Environment.GetEnvironmentVariable("GROQ_API_KEY") ?? builder.Configuration["GROQ_API_KEY"];
+var cerebrasKey = Environment.GetEnvironmentVariable("CEREBRAS_API_KEY") ?? builder.Configuration["CEREBRAS_API_KEY"];
+var anyAiKey = !string.IsNullOrEmpty(geminiKey) || !string.IsNullOrEmpty(groqKey) || !string.IsNullOrEmpty(cerebrasKey);
 var brainChoice = builder.Configuration["Ai:Brain"]
-    ?? (string.IsNullOrEmpty(geminiKey) ? "Mock" : "Gemini");
+    ?? (anyAiKey ? "Gemini" : "Mock");
 
-// The shared Gemini transport backs both the impostor brain and the style summarizer,
-// so the named http client + client are always registered (the summarizer runs even
-// under the Mock brain — it just no-ops without a key).
+// AI text generation: an ordered failover chain (Gemini → Groq → Cerebras). Each leg
+// speaks its own protocol behind a shared IAiTextProvider surface; the AiTextProvider
+// orchestrator skips keyless/unavailable legs, tracks per-provider quota + a circuit
+// breaker (AiProviderStats), and hops to the next on failure. GeminiClient is the Gemini
+// leg; Groq + Cerebras are OpenAI-compatible. The chain backs both the impostor brain
+// and the style summarizer (which no-ops when no leg has a key).
+builder.Services.AddSingleton<GameApi.GameLoop.AiProviderStats>();
 builder.Services.AddHttpClient("gemini", c => c.Timeout = TimeSpan.FromSeconds(6));
+builder.Services.AddHttpClient("groq", c => c.Timeout = TimeSpan.FromSeconds(8));
+builder.Services.AddHttpClient("cerebras", c => c.Timeout = TimeSpan.FromSeconds(8));
 builder.Services.AddSingleton<GameApi.GameLoop.GeminiClient>();
+
+builder.Services.AddSingleton<GameApi.GameLoop.AiTextProvider>(sp =>
+{
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    var httpFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var lf = sp.GetRequiredService<ILoggerFactory>();
+    var legs = new List<GameApi.GameLoop.IAiProviderLeg>
+    {
+        sp.GetRequiredService<GameApi.GameLoop.GeminiClient>(),
+        new GameApi.GameLoop.OpenAiCompatClient(
+            "groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", "GROQ_API_KEY",
+            GameApi.GameLoop.QuotaReset.UtcMidnight, httpFactory, cfg,
+            lf.CreateLogger<GameApi.GameLoop.OpenAiCompatClient>()),
+        new GameApi.GameLoop.OpenAiCompatClient(
+            "cerebras", "https://api.cerebras.ai/v1", "llama-3.3-70b", "CEREBRAS_API_KEY",
+            GameApi.GameLoop.QuotaReset.UtcMidnight, httpFactory, cfg,
+            lf.CreateLogger<GameApi.GameLoop.OpenAiCompatClient>()),
+    };
+    return new GameApi.GameLoop.AiTextProvider(
+        legs, sp.GetRequiredService<GameApi.GameLoop.AiProviderStats>(),
+        lf.CreateLogger<GameApi.GameLoop.AiTextProvider>());
+});
+builder.Services.AddSingleton<GameApi.GameLoop.IAiTextProvider>(sp =>
+    sp.GetRequiredService<GameApi.GameLoop.AiTextProvider>());
 builder.Services.AddSingleton<GameApi.GameLoop.StyleSummarizer>();
 
 if (string.Equals(brainChoice, "Gemini", StringComparison.OrdinalIgnoreCase))

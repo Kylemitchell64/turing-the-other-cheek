@@ -22,12 +22,14 @@ public class StyleSummarizer
     public const string DefaultsJson =
         "{\"avgLength\":45,\"capitalization\":\"mixed\",\"punctuationQuirks\":\"\",\"typoRate\":0.08,\"slang\":[],\"sentenceStyle\":\"casual, short\",\"topics\":[]}";
 
-    private readonly GeminiClient _gemini;
+    // The failover chain (any of Gemini/Groq/Cerebras answers). GeminiClient still
+    // satisfies this interface directly, so the existing unit tests pass one in unchanged.
+    private readonly IAiTextProvider _gemini;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<StyleSummarizer> _logger;
 
     public StyleSummarizer(
-        GeminiClient gemini,
+        IAiTextProvider gemini,
         IServiceScopeFactory scopeFactory,
         ILogger<StyleSummarizer> logger)
     {

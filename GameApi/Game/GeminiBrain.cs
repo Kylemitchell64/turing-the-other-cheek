@@ -11,12 +11,15 @@ namespace GameApi.GameLoop;
 // model in every path so nothing insta-sends after a stall.
 public class GeminiBrain : IAiBrain
 {
-    private readonly GeminiClient _gemini;
+    // The failover chain (Gemini → Groq → Cerebras), not the raw Gemini client — but the
+    // 1-retry-800ms budget and canned-fallback below stay the LAST resort after the whole
+    // chain is spent.
+    private readonly IAiTextProvider _ai;
     private readonly ILogger<GeminiBrain> _logger;
 
-    public GeminiBrain(GeminiClient gemini, ILogger<GeminiBrain> logger)
+    public GeminiBrain(IAiTextProvider ai, ILogger<GeminiBrain> logger)
     {
-        _gemini = gemini;
+        _ai = ai;
         _logger = logger;
     }
 
@@ -217,9 +220,10 @@ Answer the prompt in one friendly, polite, complete sentence. Keep it a little g
         return await CallOnceAsync(systemPrompt, userPrompt, maxTokens, budget.Token);
     }
 
-    // A single generateContent call at the impostor's temperature/token budget.
+    // A single generation at the impostor's temperature/token budget, routed through the
+    // whole failover chain.
     private Task<string?> CallOnceAsync(string systemPrompt, string userPrompt, int maxTokens, CancellationToken ct) =>
-        _gemini.GenerateAsync(systemPrompt, userPrompt, temperature: 1.0, maxOutputTokens: maxTokens, ct);
+        _ai.GenerateAsync(systemPrompt, userPrompt, temperature: 1.0, maxOutputTokens: maxTokens, ct);
 
     // ---- the template (AI-DESIGN section 1, verbatim) ----
 
