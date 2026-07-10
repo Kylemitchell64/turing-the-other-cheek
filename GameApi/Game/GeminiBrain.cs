@@ -134,7 +134,11 @@ public class GeminiBrain : IAiBrain
     // and, on short answer windows, a keep-it-tiny instruction.
     private static string AppendConditionalLines(string prompt, AiTurnContext ctx)
     {
-        var packLine = PackGuidance(ctx.PackKey);
+        // Custom pack: only the nsfw ones get the crude-match line; a clean custom pack
+        // adds nothing (same as family). Built-in packs use their key-based guidance.
+        var packLine = ctx.PackKey == "custom"
+            ? (ctx.CustomNsfw ? CrudeGuidance : "")
+            : PackGuidance(ctx.PackKey);
         if (packLine.Length > 0) prompt += "\n\n" + packLine;
         if (ctx.WindowSeconds <= 20)
             prompt += "\n\nTIME PRESSURE: everyone only has a few seconds to answer this round. Keep your answer to 2-6 words, like someone typing in a hurry.";
@@ -171,12 +175,14 @@ Answer the prompt in one friendly, polite, complete sentence. Keep it a little g
 
     // Pack-specific nudge appended to the system prompt. Trivia: guess like a human
     // from foggy memory. Adult/drinking: match the group's crassness, never escalate.
+    private const string CrudeGuidance =
+        "THIS GAME LEANS CRUDE: match the group's exact level of crassness and never escalate beyond it. If they stay tame, you stay tame.";
+
     private static string PackGuidance(string packKey) => packKey switch
     {
         "trivia" =>
             "THIS GAME IS TRIVIA: answer like someone guessing from vague half-remembered knowledge, not a search engine. Be wrong sometimes, hedge, round numbers off, and never sound encyclopedic or perfectly precise.",
-        "adult" or "drinking" =>
-            "THIS GAME LEANS CRUDE: match the group's exact level of crassness and never escalate beyond it. If they stay tame, you stay tame.",
+        "adult" or "drinking" => CrudeGuidance,
         _ => "",
     };
 

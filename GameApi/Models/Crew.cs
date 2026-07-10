@@ -28,6 +28,11 @@ public class Crew
     public string Difficulty { get; set; } = "normal";
     public string PaceKey { get; set; } = "standard";
 
+    // When PackKey is "custom" (phase 20), the crew's AI-built pack as its signed share-code.
+    // Decoded + verified server-side when a crew lobby opens so the pack comes back with the
+    // crew. Null for a normal pack. Only the code is stored — never the raw prompts.
+    public string? CustomPackCode { get; set; }
+
     public DateTime CreatedAt { get; set; }
 
     // The AI's accumulated knowledge of this group: strict JSON produced after each crew

@@ -52,6 +52,9 @@ public record AiTurnContext(
     // The full answer window for this lobby's pace, so the timing model scales its
     // human-ish bands to it (TimeRemaining is just what's LEFT when we were asked).
     double WindowSeconds = 30.0,
+    // For a custom pack (phase 20): whether the host's pack was tagged adult. Drives the
+    // same crude-match guidance line the adult/drinking packs get; false leaves it off.
+    bool CustomNsfw = false,
     // Rendered GROUP NOTES for a crew game (phase 19): what the AI has learned about how
     // this exact group plays. Injected into the system prompt verbatim, only when non-null.
     // Set only on NORMAL/HARD crew games — EASY never gets it, ordinary lobbies leave it null.

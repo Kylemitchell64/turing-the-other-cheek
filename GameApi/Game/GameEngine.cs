@@ -183,7 +183,9 @@ public class GameEngine : BackgroundService
     {
         lobby.RoundNumber = roundNumber;
         lobby.State = GameState.Prompting;
-        lobby.CurrentPrompt = PromptPacks.PickPrompt(lobby.PackKey, lobby.UsedPromptIndices);
+        lobby.CurrentPrompt = lobby.PackKey == PromptPacks.CustomKey && lobby.CustomPack != null
+            ? PromptPacks.PickPrompt(lobby.CustomPack.Prompts, lobby.UsedPromptIndices)
+            : PromptPacks.PickPrompt(lobby.PackKey, lobby.UsedPromptIndices);
         lobby.RoundPrompts[roundNumber] = lobby.CurrentPrompt;
         lobby.Answers.Clear();
         lobby.AiAnswerRequested = false;
@@ -249,6 +251,7 @@ public class GameEngine : BackgroundService
             PackKey: lobby.PackKey,
             Difficulty: lobby.Difficulty,
             WindowSeconds: PromptWindow(lobby).TotalSeconds,
+            CustomNsfw: lobby.CustomPack?.Nsfw ?? false,
             GroupNotes: lobby.GroupNotes);
 
         _ = Task.Run(async () =>

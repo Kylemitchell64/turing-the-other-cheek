@@ -11,6 +11,11 @@ public static class PromptPacks
 {
     public const string DefaultKey = "family";
 
+    // The reserved key for an AI-built custom pack (phase 20). NOT a member of All and
+    // NOT accepted by IsValidKey — a lobby only gets it via the host's SetCustomPack, and
+    // its prompts come from Lobby.CustomPack, not from any table here.
+    public const string CustomKey = "custom";
+
     // FAMILY reuses the existing 60-prompt casual pool (AI-DESIGN section 5) so the
     // default game is unchanged. The other three are new.
     public static readonly PromptPack Family = new(
@@ -293,9 +298,13 @@ public static class PromptPacks
     // Pick a prompt from the pack that hasn't been used yet this game. usedIndices is
     // per-game state on the lobby; when the pack is exhausted we clear it and start
     // over (rare — packs are 40-60 deep, games are <=8 rounds).
-    public static string PickPrompt(string key, HashSet<int> usedIndices)
+    public static string PickPrompt(string key, HashSet<int> usedIndices) =>
+        PickPrompt(Get(key).Prompts, usedIndices);
+
+    // Same no-repeat pick over an arbitrary prompt array — used for the custom pack, whose
+    // prompts live on the lobby rather than in a static PromptPack.
+    public static string PickPrompt(string[] prompts, HashSet<int> usedIndices)
     {
-        var prompts = Get(key).Prompts;
         if (usedIndices.Count >= prompts.Length)
             usedIndices.Clear();
 

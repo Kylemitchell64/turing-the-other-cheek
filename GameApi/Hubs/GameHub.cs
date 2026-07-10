@@ -25,16 +25,18 @@ public class GameHub : Hub
     private readonly GameContext _db;
     private readonly MaintenanceState _maintenance;
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly PackCodec _packCodec;
     private readonly ILogger<GameHub> _logger;
 
     public GameHub(LobbyStore store, GameEngine engine, GameContext db, MaintenanceState maintenance,
-        IServiceScopeFactory scopeFactory, ILogger<GameHub> logger)
+        IServiceScopeFactory scopeFactory, PackCodec packCodec, ILogger<GameHub> logger)
     {
         _store = store;
         _engine = engine;
         _db = db;
         _maintenance = maintenance;
         _scopeFactory = scopeFactory;
+        _packCodec = packCodec;
         _logger = logger;
     }
 
@@ -111,6 +113,16 @@ public class GameHub : Hub
                 lobby.PackKey = crew.PackKey;
                 lobby.Difficulty = crew.Difficulty;
                 lobby.PaceKey = crew.PaceKey;
+                // Restore the crew's saved custom pack (phase 20). A code that no longer
+                // verifies (e.g. JWT_KEY rotated) just falls back to the family pack.
+                if (crew.PackKey == PromptPacks.CustomKey && crew.CustomPackCode != null)
+                {
+                    var restored = _packCodec.TryDecode(crew.CustomPackCode, out _);
+                    if (restored != null)
+                        lobby.CustomPack = restored;
+                    else
+                        lobby.PackKey = PromptPacks.DefaultKey;
+                }
 
                 var player = new LobbyPlayer { UserId = UserId, DisplayName = DisplayName, CharacterJson = characterJson };
                 player.ConnectionIds.Add(Context.ConnectionId);
@@ -356,24 +368,64 @@ public class GameHub : Hub
             lobby.PackKey = packKey;
             lobby.Difficulty = difficulty;
             lobby.PaceKey = paceKey;
+            // Picking a normal pack clears any AI-built custom pack (and its saved code).
+            lobby.CustomPack = null;
         }
 
         // Crew lobby: persist the new config back to the Crew row so the group always
-        // "comes back to the same config". Fire-and-forget, off the lobby lock.
+        // "comes back to the same config". Fire-and-forget, off the lobby lock. Choosing a
+        // normal pack also wipes the crew's saved custom-pack code.
         int? crewId;
         lock (lobby.Sync) crewId = lobby.CrewId;
         if (crewId != null)
-            PersistCrewOptions(crewId.Value, packKey, difficulty, paceKey);
+            PersistCrewOptions(crewId.Value, packKey, difficulty, paceKey, customPackCode: null);
 
         _logger.LogInformation("Lobby {Code} options set to {Pack}/{Difficulty}/{Pace}",
             lobby.Code, packKey, difficulty, paceKey);
-        await Clients.Group(lobby.Code).SendAsync("LobbyOptionsChanged", packKey, difficulty, paceKey);
+        await Clients.Group(lobby.Code).SendAsync("LobbyOptionsChanged", packKey, difficulty, paceKey, null);
+    }
+
+    // Host-only, pre-start only: install an AI-built custom pack from its signed share-code
+    // (phase 20). The code is decoded + signature-verified SERVER-SIDE — a hand-crafted or
+    // tampered code is rejected, which is what keeps the generation-time safety filter from
+    // being bypassed. Sets PackKey="custom" and stashes the pack in memory on the lobby.
+    public async Task SetCustomPack(string code)
+    {
+        var lobby = FindLobbyForCaller() ?? throw new HubException("You're not in a lobby");
+
+        var pack = _packCodec.TryDecode(code, out var error);
+        if (pack == null)
+            throw new HubException(error);
+
+        lock (lobby.Sync)
+        {
+            if (lobby.HostUserId != UserId)
+                throw new HubException("Only the host can change lobby options");
+            if (lobby.State != GameState.Lobby)
+                throw new HubException("Can't change options once the game has started");
+
+            lobby.PackKey = PromptPacks.CustomKey;
+            lobby.CustomPack = pack;
+            lobby.UsedPromptIndices.Clear();
+        }
+
+        // Persist the code to the crew row so the crew comes back to its custom pack.
+        int? crewId;
+        lock (lobby.Sync) crewId = lobby.CrewId;
+        if (crewId != null)
+            PersistCrewOptions(crewId.Value, PromptPacks.CustomKey, lobby.Difficulty, lobby.PaceKey,
+                customPackCode: _packCodec.Encode(pack));
+
+        _logger.LogInformation("Lobby {Code} set a custom pack ({Count} prompts)",
+            lobby.Code, pack.Prompts.Length);
+        await Clients.Group(lobby.Code)
+            .SendAsync("LobbyOptionsChanged", lobby.PackKey, lobby.Difficulty, lobby.PaceKey, pack.Name);
     }
 
     // Write a crew lobby's freshly-picked options back to its Crew row. Fire-and-forget on
     // a fresh scope (the hub's own DbContext is gone once the method returns); a failure
     // just means the saved config lags a game — never blocks the live option change.
-    private void PersistCrewOptions(int crewId, string pack, string difficulty, string pace)
+    private void PersistCrewOptions(int crewId, string pack, string difficulty, string pace, string? customPackCode)
     {
         _ = Task.Run(async () =>
         {
@@ -386,6 +438,8 @@ public class GameHub : Hub
                 crew.PackKey = pack;
                 crew.Difficulty = difficulty;
                 crew.PaceKey = pace;
+                // Only a "custom" pack carries a code; any normal pack clears it.
+                crew.CustomPackCode = pack == PromptPacks.CustomKey ? customPackCode : null;
                 await db.SaveChangesAsync();
             }
             catch (Exception ex)
@@ -611,7 +665,8 @@ public class GameHub : Hub
                     CharacterDefaults.Resolve(p.CharacterJson, p.DisplayName)))
                 .ToList();
             dto = new LobbyStateDto(lobby.Code, lobby.State.ToString(), players,
-                lobby.PackKey, lobby.Difficulty, lobby.PaceKey, lobby.CrewName);
+                lobby.PackKey, lobby.Difficulty, lobby.PaceKey, lobby.CrewName,
+                lobby.PackKey == PromptPacks.CustomKey ? lobby.CustomPack?.Name : null);
         }
         await Clients.Group(lobby.Code).SendAsync("LobbyUpdated", dto);
     }

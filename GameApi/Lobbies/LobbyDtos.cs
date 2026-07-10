@@ -19,9 +19,12 @@ public record LobbyPlayerDto(
 // CrewName is the ONLY crew-related field allowed over the wire (ANONYMITY AUDIT): the
 // client shows "CREW: <name>" + the persistent code; the crew id, group profile, and
 // membership never leave the server. Null for ordinary lobbies.
+// CustomPackName carries the AI-built pack's title when PackKey is "custom" (phase 20) so
+// a late joiner sees the "CUSTOM: <name>" chip; null for normal packs. The prompts
+// themselves never travel here — only the display name does.
 public record LobbyStateDto(
     string Code, string State, List<LobbyPlayerDto> Players,
-    string PackKey, string Difficulty, string PaceKey, string? CrewName);
+    string PackKey, string Difficulty, string PaceKey, string? CrewName, string? CustomPackName);
 
 // One entry in GameStarted(roster[]). Humans + the AI, indistinguishable.
 // Deliberately NO user id, NO isAi, NO isHost — just name + tokens + character.

@@ -36,6 +36,12 @@ public class Lobby
     // one game (cleared on a fresh game / rematch, and when a pack is exhausted).
     public HashSet<int> UsedPromptIndices { get; } = new();
 
+    // An AI-built custom pack (phase 20). Set by the host via SetCustomPack(code); when
+    // present PackKey is "custom" and PickPrompt draws from here. In-memory only — the
+    // pack lives on the Lobby (and inside the signed code), never stored server-side.
+    // Cleared when the host picks a normal pack; kept across a rematch like PackKey.
+    public CustomPack? CustomPack { get; set; }
+
     // ---- crew binding (phase 19) ----
 
     // When set, this is a CREW lobby: only members of crew CrewId may join it, option
