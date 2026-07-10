@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { AuthProvider } from "./auth/AuthContext";
 import { LobbyProvider } from "./game/LobbyContext";
+import { MusicProvider } from "./audio/MusicContext";
 import App from "./App.jsx";
 import "./index.css";
 
@@ -11,7 +12,9 @@ createRoot(document.getElementById("root")).render(
     <BrowserRouter>
       <AuthProvider>
         <LobbyProvider>
-          <App />
+          <MusicProvider>
+            <App />
+          </MusicProvider>
         </LobbyProvider>
       </AuthProvider>
     </BrowserRouter>

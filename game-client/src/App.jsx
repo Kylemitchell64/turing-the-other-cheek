@@ -1,5 +1,6 @@
 import { Routes, Route } from "react-router-dom";
 import ProtectedRoute from "./auth/ProtectedRoute";
+import MusicWidget from "./components/MusicWidget";
 import LoginPage from "./pages/LoginPage";
 import AuthCallbackPage from "./pages/AuthCallbackPage";
 import ChooseUsernamePage from "./pages/ChooseUsernamePage";
@@ -13,6 +14,7 @@ import AdminPage from "./pages/AdminPage";
 
 export default function App() {
   return (
+    <>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
@@ -81,5 +83,8 @@ export default function App() {
         }
       />
     </Routes>
+    {/* Mounted app-wide so the music widget is on every screen (phase 21). */}
+    <MusicWidget />
+    </>
   );
 }

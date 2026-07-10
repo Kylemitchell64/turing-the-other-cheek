@@ -40,6 +40,11 @@ export function LobbyProvider({ children }) {
   // The AI-built custom pack's title when packKey === "custom" (phase 20); null otherwise.
   const [customPackName, setCustomPackName] = useState(null);
 
+  // The room's chiptune mood (phase 21). Host-driven + cosmetic. Seeded from LobbyUpdated
+  // for late joiners, kept live via LobbyMusicChanged. MusicContext reads this to drive
+  // every "follow host" player onto one shared soundtrack.
+  const [musicMood, setMusicMood] = useState("arcade");
+
   // Who's currently shown as "typing" this round, keyed by display name. Driven by the
   // server's PlayerTyping(name, isTyping) — humans (via SetTyping) AND the AI's faked
   // indicator, indistinguishable here. Cleared on every phase change.
@@ -86,6 +91,13 @@ export function LobbyProvider({ children }) {
         if (state?.paceKey) setPaceKey(state.paceKey);
         // customPackName is present only for a custom pack; normal packs send null.
         setCustomPackName(state?.customPackName ?? null);
+        // Sync the room's music mood for late joiners (host-driven, cosmetic).
+        if (state?.musicMood) setMusicMood(state.musicMood);
+      });
+
+      conn.on("LobbyMusicChanged", (mood) => {
+        setMusicMood(mood);
+        log(`host set the music to ${mood}`);
       });
 
       conn.on("LobbyOptionsChanged", (pack, diff, pace, custom) => {
@@ -267,6 +279,14 @@ export function LobbyProvider({ children }) {
     await conn.invoke("SetCustomPack", code);
   }, [ensureConnected]);
 
+  // Host sets the room's chiptune mood (phase 21). Cosmetic, so the server allows it in any
+  // state. Optimistic; the server echoes LobbyMusicChanged to everyone (including us).
+  const setLobbyMusic = useCallback(async (mood) => {
+    setMusicMood(mood);
+    const conn = await ensureConnected();
+    await conn.invoke("SetLobbyMusic", mood);
+  }, [ensureConnected]);
+
   const submitAnswer = useCallback(async (text) => {
     const conn = await ensureConnected();
     await conn.invoke("SubmitAnswer", text);
@@ -319,6 +339,7 @@ export function LobbyProvider({ children }) {
     setDifficulty("normal");
     setPaceKey("standard");
     setCustomPackName(null);
+    setMusicMood("arcade");
     if (connRef.current) {
       try { await connRef.current.stop(); } catch { /* ignore */ }
       connRef.current = null;
@@ -331,6 +352,7 @@ export function LobbyProvider({ children }) {
     round, phase, reveal, accusation, accusationMade,
     vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, events,
     tokens, clockSkew, history, packKey, difficulty, paceKey, customPackName, typing,
+    musicMood, setLobbyMusic,
     createLobby, joinLobby, createCrewLobby, setCrewCode, startGame, setLobbyOptions, setCustomPack, leaveLobby,
     submitAnswer, makeAccusation, useFakeOut, setTypingState,
   };

@@ -286,7 +286,7 @@ export function createChiptune() {
     stopScheduler();
     if (typeof document !== "undefined")
       document.removeEventListener("visibilitychange", handleVisibility);
-    try { ctx && ctx.close(); } catch { /* ignore */ }
+    try { if (ctx) ctx.close(); } catch { /* ignore */ }
     ctx = null;
   }
 
