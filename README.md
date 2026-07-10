@@ -1,5 +1,7 @@
 # Turing the Other Cheek
 
+[![CI](https://github.com/Kylemitchell64/turing-the-other-cheek/actions/workflows/ci.yml/badge.svg)](https://github.com/Kylemitchell64/turing-the-other-cheek/actions/workflows/ci.yml)
+
 A social deduction party game where one player in every lobby is secretly an AI, and
 everyone else is trying to figure out who. The twist: the AI actually learns how you
 write over time, so the more you play the harder it gets to catch.
@@ -40,6 +42,10 @@ Backend is in `GameApi`, the phone-first React client is in `game-client`.
   you burn a token. At 0 tokens a wrong accusation makes you answer-only.
 - Game ends on a correct un-vetoed accusation (Detector win), or after 8 rounds / all
   humans eliminated (AI survives).
+
+## Tests & CI
+
+Every push and PR runs the whole thing through GitHub Actions — the .NET suite (130 tests on EF InMemory, no DB needed), the client lint + build, a Docker image build, and a 4-browser Playwright game played start to finish. Green badge above means all of that passed on `main`.
 
 ## Running it locally
 
