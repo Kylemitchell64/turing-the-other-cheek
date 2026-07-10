@@ -47,6 +47,33 @@ Backend is in `GameApi`, the phone-first React client is in `game-client`.
 
 Every push and PR runs the whole thing through GitHub Actions — the .NET suite (130 tests on EF InMemory, no DB needed), the client lint + build, a Docker image build, and a 4-browser Playwright game played start to finish. Green badge above means all of that passed on `main`.
 
+## Load test
+
+There's a [k6](https://k6.io) script in `loadtest/k6-lobbies.js` that mimics the path a
+real client takes into a lobby — health ping, guest login for a JWT, then the SignalR
+`/negotiate` handshake — and runs it from 20 concurrent virtual users. Point it at a local
+API on the in-memory DB + Mock brain (see the header comment in the script), then:
+
+```
+k6 run loadtest/k6-lobbies.js
+```
+
+Latest local run (loopback, in-memory DB, 20 VUs over ~35s):
+
+| Metric | Result |
+|--------|--------|
+| Requests | 1,665 total, **0 failed** |
+| Throughput | ~46 req/s (555 full login→negotiate cycles) |
+| Latency | avg 1.3 ms, **p95 2.4 ms**, max 297 ms |
+| Checks | 2,775 / 2,775 passed |
+
+These are a floor, not a headline — it's all over the loopback with an in-memory store, so
+there's no network or Postgres in the path. What I actually wanted to prove is that login +
+the negotiate handshake stay flat under concurrency and nothing 500s. One gotcha worth
+knowing: the API rate-limits 30 req/min per IP, and since k6 all comes from one IP you have
+to bump `RateLimit__PermitsPerMinute` for the run or you just measure the limiter (the
+`/hubs` path is exempt, so negotiate sails through either way).
+
 ## Running it locally
 
 You need .NET 8 SDK, Node 22, and a Postgres connection string (Supabase free works).
