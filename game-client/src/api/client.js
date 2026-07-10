@@ -45,6 +45,13 @@ export const api = {
   // Public maintenance probe — no auth. { maintenance: bool, message: string? }.
   getStatus: () => request("/api/status"),
 
+  // --- crews (phase 19, signed-in non-guests only; server 403s guests) ---
+  getCrews: (token) => request("/api/crews/mine", { token }),
+  createCrew: (token, name) => request("/api/crews", { method: "POST", token, body: { name } }),
+  joinCrew: (token, code) => request("/api/crews/join", { method: "POST", token, body: { code } }),
+  leaveCrew: (token, id) => request(`/api/crews/${id}`, { method: "DELETE", token }),
+  disbandCrew: (token, id) => request(`/api/crews/${id}?disband=true`, { method: "DELETE", token }),
+
   // --- admin dashboard (all gated server-side by the AdminOnly policy) ---
   adminOverview: (token) => request("/api/admin/overview", { token }),
   adminTimeline: (token) => request("/api/admin/timeline", { token }),

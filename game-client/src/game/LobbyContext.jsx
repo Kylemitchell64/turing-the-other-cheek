@@ -13,7 +13,8 @@ export function LobbyProvider({ children }) {
   const connRef = useRef(null);
 
   const [status, setStatus] = useState("idle"); // idle | connecting | connected | error
-  const [lobby, setLobby] = useState(null); // { code, state, players[] }
+  const [lobby, setLobby] = useState(null); // { code, state, players[], crewName? }
+  const [crewCode, setCrewCode] = useState(null); // a crew's persistent code, when in a crew lobby
   const [roster, setRoster] = useState(null); // set when GameStarted fires
   const [error, setError] = useState(null);
 
@@ -222,6 +223,16 @@ export function LobbyProvider({ children }) {
     await conn.invoke("JoinLobby", code.trim().toUpperCase());
   }, [ensureConnected]);
 
+  // Open (or fold into) a crew's live lobby. Seeded server-side from the crew's saved
+  // config; lands the caller in the normal LobbyPage, which shows the crew name + code.
+  const createCrewLobby = useCallback(async (crewId, crewJoinCode = null) => {
+    setError(null);
+    setRoster(null);
+    setCrewCode(crewJoinCode); // the persistent code to show instead of the live one
+    const conn = await ensureConnected();
+    await conn.invoke("CreateCrewLobby", crewId);
+  }, [ensureConnected]);
+
   const startGame = useCallback(async () => {
     setError(null);
     const conn = await ensureConnected();
@@ -273,6 +284,7 @@ export function LobbyProvider({ children }) {
   // wipe all local game state.
   const leaveLobby = useCallback(async () => {
     setLobby(null);
+    setCrewCode(null);
     setRoster(null);
     setRound(null);
     setPhase(null);
@@ -300,11 +312,11 @@ export function LobbyProvider({ children }) {
   }, []);
 
   const value = {
-    status, lobby, roster, error, setError,
+    status, lobby, crewCode, roster, error, setError,
     round, phase, reveal, accusation, accusationMade,
     vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, events,
     tokens, clockSkew, history, packKey, difficulty, paceKey, typing,
-    createLobby, joinLobby, startGame, setLobbyOptions, leaveLobby,
+    createLobby, joinLobby, createCrewLobby, setCrewCode, startGame, setLobbyOptions, leaveLobby,
     submitAnswer, makeAccusation, useFakeOut, setTypingState,
   };
 

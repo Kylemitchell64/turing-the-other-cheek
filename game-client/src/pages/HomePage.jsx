@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { useLobby } from "../game/LobbyContext";
 import MaintenanceBanner from "../components/MaintenanceBanner";
+import CrewsPanel from "../components/CrewsPanel";
 
 export default function HomePage() {
   const { user, logout } = useAuth();
@@ -97,6 +98,8 @@ export default function HomePage() {
           </form>
         )}
       </div>
+
+      <CrewsPanel />
 
       <div className="panel about">
         <button

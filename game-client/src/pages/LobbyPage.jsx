@@ -22,7 +22,7 @@ const PACES = [
 
 export default function LobbyPage() {
   const { user } = useAuth();
-  const { lobby, roster, packKey, difficulty, paceKey, setLobbyOptions, startGame, leaveLobby } = useLobby();
+  const { lobby, crewCode, roster, packKey, difficulty, paceKey, setLobbyOptions, startGame, leaveLobby } = useLobby();
   const navigate = useNavigate();
 
   const [busy, setBusy] = useState(false);
@@ -47,6 +47,11 @@ export default function LobbyPage() {
   const canStart = lobby.players.length >= 3 && lobby.players.length <= 8;
 
   const activePack = packFor(packKey);
+
+  // Crew lobby: the server sends only crewName over the wire; we show the crew's
+  // persistent code (threaded through context) instead of the ephemeral live one.
+  const isCrew = !!lobby.crewName;
+  const shownCode = isCrew && crewCode ? crewCode : lobby.code;
 
   const onPickPack = async (key) => {
     if (key === packKey) return;
@@ -77,7 +82,7 @@ export default function LobbyPage() {
 
   const copyCode = async () => {
     try {
-      await navigator.clipboard.writeText(lobby.code);
+      await navigator.clipboard.writeText(shownCode);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch { /* clipboard blocked — the code is on screen anyway */ }
@@ -107,17 +112,22 @@ export default function LobbyPage() {
       </div>
 
       <div className="panel">
-        <h1 className="glow">[ LOBBY ]</h1>
-        <p className="tagline">share the code. 3–8 players.<span className="cursor" /></p>
+        <h1 className="glow">{isCrew ? `[ CREW: ${lobby.crewName} ]` : "[ LOBBY ]"}</h1>
+        <p className="tagline">
+          {isCrew ? "your crew's permanent room. 3–8 players." : "share the code. 3–8 players."}
+          <span className="cursor" />
+        </p>
 
         <div className="lobby-grid">
         <div className="lobby-col">
         <button className="code" onClick={copyCode} title="tap to copy">
-          {lobby.code.split("").map((c, i) => (
+          {shownCode.split("").map((c, i) => (
             <span key={i} className="code-char">{c}</span>
           ))}
         </button>
-        <p className="soon">{copied ? "copied!" : "// tap the code to copy"}</p>
+        <p className="soon">
+          {copied ? "copied!" : isCrew ? "// crewmates open this from their crews list" : "// tap the code to copy"}
+        </p>
 
         <div className="roster">
           {lobby.players.map((p) => (

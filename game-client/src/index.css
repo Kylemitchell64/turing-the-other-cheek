@@ -1634,3 +1634,30 @@ button.ops-pause { padding: 0.55rem 1rem; }
   .au-head { color: var(--muted); background: transparent; border-color: transparent; font-size: 0.66rem; letter-spacing: 1px; padding-bottom: 0; }
   .au-games::before { content: ""; }
 }
+
+/* --- crews (phase 19) --- */
+.crews { display: flex; flex-direction: column; gap: 0.5rem; }
+.crews-heading { color: var(--neon); letter-spacing: 2px; font-size: 0.95rem; margin: 0; text-shadow: 0 0 8px rgba(51, 255, 102, 0.4); }
+.crews-sub, .crews-teaser { color: var(--muted); font-size: 0.78rem; margin: 0; }
+.crew-list { display: flex; flex-direction: column; gap: 0.4rem; }
+.crew-row { display: flex; align-items: stretch; gap: 0.4rem; }
+.crew-open {
+  flex: 1 1 auto; display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-start;
+  padding: 0.5rem 0.6rem; text-align: left; cursor: pointer;
+  background: #060a08; border: 1px solid var(--neon-dim); border-radius: 6px; color: var(--text);
+}
+.crew-open:hover:not(:disabled) { border-color: var(--neon); box-shadow: 0 0 10px rgba(51, 255, 102, 0.18); }
+.crew-open:disabled { opacity: 0.5; cursor: default; }
+.crew-name { color: var(--neon); font-weight: bold; letter-spacing: 1px; }
+.crew-meta { color: var(--muted); font-size: 0.72rem; }
+.crew-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.1rem; }
+.crew-chip {
+  font-size: 0.64rem; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--muted); border: 1px solid var(--neon-dim); border-radius: 4px; padding: 0.05rem 0.35rem;
+}
+.crew-chip.code { color: var(--neon); border-color: var(--neon); letter-spacing: 2px; }
+.crew-leave { flex: 0 0 auto; align-self: center; font-size: 0.72rem; color: var(--muted); }
+.crew-leave:hover { color: var(--danger); }
+.crew-actions { display: flex; gap: 0.5rem; }
+.crew-actions .ghost { flex: 1 1 0; }
+.crew-form { margin-top: 0.25rem; }
