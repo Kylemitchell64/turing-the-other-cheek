@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { useLobby } from "../game/LobbyContext";
 import { PACKS, packFor } from "../game/packs";
+import PackMakerModal from "../components/PackMakerModal";
 
 // Impostor difficulty + answer pace options. Keys must match the server's
 // DifficultyProfile / PaceOptions keys exactly.
@@ -22,12 +23,14 @@ const PACES = [
 
 export default function LobbyPage() {
   const { user } = useAuth();
-  const { lobby, crewCode, roster, packKey, difficulty, paceKey, setLobbyOptions, startGame, leaveLobby } = useLobby();
+  const { lobby, crewCode, roster, packKey, difficulty, paceKey, customPackName,
+    setLobbyOptions, setCustomPack, startGame, leaveLobby } = useLobby();
   const navigate = useNavigate();
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [showMaker, setShowMaker] = useState(false);
 
   // No lobby in state (e.g. hard refresh lost the socket) → back to home.
   useEffect(() => {
@@ -46,6 +49,7 @@ export default function LobbyPage() {
   const amHost = me?.isHost;
   const canStart = lobby.players.length >= 3 && lobby.players.length <= 8;
 
+  const isCustom = packKey === "custom";
   const activePack = packFor(packKey);
 
   // Crew lobby: the server sends only crewName over the wire; we show the crew's
@@ -162,9 +166,29 @@ export default function LobbyPage() {
                 </button>
               );
             })}
+            {amHost && (
+              <button
+                className={["seg", "seg-make", isCustom ? "on" : ""].join(" ").trim()}
+                onClick={() => setShowMaker(true)}
+                aria-pressed={isCustom}
+              >
+                + MAKE YOUR OWN
+              </button>
+            )}
           </div>
-          <p className="pack-desc">{activePack.description}</p>
-          {activePack.ageNote && <p className="pack-age">{activePack.ageNote}</p>}
+          {isCustom ? (
+            <>
+              <p className="pack-desc">
+                <span className="badge custom-chip">CUSTOM: {customPackName || "your pack"}</span>
+              </p>
+              <p className="pack-age">// an ai-built category, just for this room.</p>
+            </>
+          ) : (
+            <>
+              <p className="pack-desc">{activePack.description}</p>
+              {activePack.ageNote && <p className="pack-age">{activePack.ageNote}</p>}
+            </>
+          )}
         </div>
 
         <div className="pack-picker">
@@ -215,6 +239,13 @@ export default function LobbyPage() {
         </div>
         </div>
       </div>
+
+      {showMaker && (
+        <PackMakerModal
+          onUse={(code) => setCustomPack(code)}
+          onClose={() => setShowMaker(false)}
+        />
+      )}
     </div>
   );
 }

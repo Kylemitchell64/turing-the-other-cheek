@@ -45,6 +45,15 @@ export const api = {
   // Public maintenance probe — no auth. { maintenance: bool, message: string? }.
   getStatus: () => request("/api/status"),
 
+  // --- AI category maker (phase 20) ---
+  // generate: { name, nsfw, prompts[], code } on 200; 422 with { error } when the AI
+  // refuses/fails a theme; 429 with { error } when rate-limited. decode: verify a signed
+  // share-code, 400 with { error } if it's been tampered with.
+  generatePack: (token, theme, count) =>
+    request("/api/packs/generate", { method: "POST", token, body: { theme, count } }),
+  decodePack: (token, code) =>
+    request("/api/packs/decode", { method: "POST", token, body: { code } }),
+
   // --- crews (phase 19, signed-in non-guests only; server 403s guests) ---
   getCrews: (token) => request("/api/crews/mine", { token }),
   createCrew: (token, name) => request("/api/crews", { method: "POST", token, body: { name } }),

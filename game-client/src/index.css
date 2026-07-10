@@ -1294,6 +1294,98 @@ button.about-toggle {
 }
 .seg.on .seg-rec { color: var(--neon); }
 
+/* ===== AI category maker (phase 20) ===== */
+.modal.pack-maker {
+  width: 100%;
+  max-width: 460px;
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--neon);
+  box-shadow: 0 0 18px var(--neon-dim);
+  padding: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.pack-maker .modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+.pack-maker .modal-head h2 { margin: 0; font-size: 1rem; }
+
+.text-input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--neon-dim);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 2px;
+}
+.text-input:focus {
+  outline: none;
+  border-color: var(--neon);
+  box-shadow: 0 0 8px var(--neon-dim);
+}
+
+.ghost.wide, .primary.wide { width: 100%; }
+
+.terminal-spin { color: var(--neon-dim); }
+
+.pack-divider {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin: 0.6rem 0 0.1rem;
+  letter-spacing: 0.03em;
+}
+
+.pack-preview {
+  max-height: 42vh;
+  overflow-y: auto;
+  border: 1px solid var(--neon-dim);
+  border-radius: 2px;
+  padding: 0.3rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+}
+.pack-preview-line {
+  color: var(--text);
+  font-size: 0.83rem;
+  line-height: 1.4;
+  padding: 0.32rem 0;
+  border-bottom: 1px dotted rgba(28, 122, 58, 0.4);
+}
+.pack-preview-line:last-child { border-bottom: none; }
+
+.pack-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.pack-actions .primary,
+.pack-actions .ghost,
+.pack-actions .as-link { flex: 1 1 40%; }
+.as-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  text-align: center;
+}
+
+.seg.seg-make { border-style: dashed; }
+.badge.custom-chip {
+  color: var(--neon);
+  border-color: var(--neon);
+  text-transform: none;
+}
+.badge.nsfw { margin-left: 0.45rem; }
+
 /* ================================================================
    DESKTOP (>=900px): the whole app lives inside a retro CRT monitor.
    Everything above stays mobile-first / portrait untouched below 900px.

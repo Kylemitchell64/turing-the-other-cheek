@@ -37,6 +37,8 @@ export function LobbyProvider({ children }) {
   const [packKey, setPackKey] = useState(DEFAULT_PACK);
   const [difficulty, setDifficulty] = useState("normal");
   const [paceKey, setPaceKey] = useState("standard");
+  // The AI-built custom pack's title when packKey === "custom" (phase 20); null otherwise.
+  const [customPackName, setCustomPackName] = useState(null);
 
   // Who's currently shown as "typing" this round, keyed by display name. Driven by the
   // server's PlayerTyping(name, isTyping) — humans (via SetTyping) AND the AI's faked
@@ -82,13 +84,16 @@ export function LobbyProvider({ children }) {
         if (state?.packKey) setPackKey(state.packKey);
         if (state?.difficulty) setDifficulty(state.difficulty);
         if (state?.paceKey) setPaceKey(state.paceKey);
+        // customPackName is present only for a custom pack; normal packs send null.
+        setCustomPackName(state?.customPackName ?? null);
       });
 
-      conn.on("LobbyOptionsChanged", (pack, diff, pace) => {
+      conn.on("LobbyOptionsChanged", (pack, diff, pace, custom) => {
         setPackKey(pack);
         setDifficulty(diff);
         setPaceKey(pace);
-        log(`options set to ${pack} / ${diff} / ${pace}`);
+        setCustomPackName(custom ?? null);
+        log(`options set to ${custom ? `custom:${custom}` : pack} / ${diff} / ${pace}`);
       });
 
       conn.on("GameStarted", (r) => {
@@ -249,9 +254,18 @@ export function LobbyProvider({ children }) {
     setPackKey(p);
     setDifficulty(d);
     setPaceKey(pc);
+    setCustomPackName(null); // picking a normal pack clears any custom one
     const conn = await ensureConnected();
     await conn.invoke("SetLobbyOptions", p, d, pc);
   }, [ensureConnected, packKey, difficulty, paceKey]);
+
+  // Install an AI-built custom pack from its signed share-code. The server decodes +
+  // verifies it (a tampered code throws), sets packKey="custom", and echoes
+  // LobbyOptionsChanged with the pack name. Throws with the server's message on failure.
+  const setCustomPack = useCallback(async (code) => {
+    const conn = await ensureConnected();
+    await conn.invoke("SetCustomPack", code);
+  }, [ensureConnected]);
 
   const submitAnswer = useCallback(async (text) => {
     const conn = await ensureConnected();
@@ -304,6 +318,7 @@ export function LobbyProvider({ children }) {
     setPackKey(DEFAULT_PACK);
     setDifficulty("normal");
     setPaceKey("standard");
+    setCustomPackName(null);
     if (connRef.current) {
       try { await connRef.current.stop(); } catch { /* ignore */ }
       connRef.current = null;
@@ -315,8 +330,8 @@ export function LobbyProvider({ children }) {
     status, lobby, crewCode, roster, error, setError,
     round, phase, reveal, accusation, accusationMade,
     vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, events,
-    tokens, clockSkew, history, packKey, difficulty, paceKey, typing,
-    createLobby, joinLobby, createCrewLobby, setCrewCode, startGame, setLobbyOptions, leaveLobby,
+    tokens, clockSkew, history, packKey, difficulty, paceKey, customPackName, typing,
+    createLobby, joinLobby, createCrewLobby, setCrewCode, startGame, setLobbyOptions, setCustomPack, leaveLobby,
     submitAnswer, makeAccusation, useFakeOut, setTypingState,
   };
 
