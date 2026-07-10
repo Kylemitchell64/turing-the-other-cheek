@@ -48,6 +48,7 @@ export default function HomePage() {
         <button className="ghost" onClick={logout}>log out</button>
       </div>
 
+      <div className="home-grid">
       <div className="panel">
         <h1 className="glow">[ TURING THE OTHER CHEEK ]</h1>
         <p className="tagline">the AI is learning how you type. every game makes it harder to catch.<span className="cursor" /></p>
@@ -118,6 +119,7 @@ export default function HomePage() {
             <p className="about-foot">// pick a name, grab some friends, find the machine.</p>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

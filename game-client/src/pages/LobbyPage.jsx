@@ -110,6 +110,8 @@ export default function LobbyPage() {
         <h1 className="glow">[ LOBBY ]</h1>
         <p className="tagline">share the code. 3–8 players.<span className="cursor" /></p>
 
+        <div className="lobby-grid">
+        <div className="lobby-col">
         <button className="code" onClick={copyCode} title="tap to copy">
           {lobby.code.split("").map((c, i) => (
             <span key={i} className="code-char">{c}</span>
@@ -129,7 +131,9 @@ export default function LobbyPage() {
           ))}
         </div>
         <p className="soon">// everyone starts with 3 fake-out tokens</p>
+        </div>
 
+        <div className="lobby-col">
         <div className="pack-picker">
           <p className="pack-heading">// prompt pack</p>
           <div className="segmented">
@@ -163,6 +167,7 @@ export default function LobbyPage() {
                 <button key={d.key} className={cls} onClick={() => amHost && onPickDifficulty(d.key)}
                   disabled={!amHost} aria-pressed={selected}>
                   {d.label}
+                  {d.key === "normal" && <span className="seg-rec">[recommended]</span>}
                 </button>
               );
             })}
@@ -197,6 +202,8 @@ export default function LobbyPage() {
         ) : (
           <p className="soon">// waiting for the host to start</p>
         )}
+        </div>
+        </div>
       </div>
     </div>
   );

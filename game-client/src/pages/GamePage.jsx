@@ -17,6 +17,21 @@ function Tokens({ n }) {
   );
 }
 
+// True at the desktop breakpoint (>=900px). Drives larger podium sprites; the CSS
+// handles the rest of the two-column layout.
+function useIsWide() {
+  const [wide, setWide] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(min-width: 900px)").matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 900px)");
+    const onChange = () => setWide(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+  return wide;
+}
+
 export default function GamePage() {
   const { user } = useAuth();
   const {
@@ -37,6 +52,7 @@ export default function GamePage() {
   const scrollRef = useRef(null);
 
   const myName = user?.displayName || user?.unique_name;
+  const wide = useIsWide();
 
   useEffect(() => {
     if (!roster) navigate("/", { replace: true });
@@ -174,7 +190,7 @@ export default function GamePage() {
           msg={msg}
         />
       ) : (
-        <>
+        <div className="game-grid">
           <div className="crt-head">
             {phase === "prompting"
               ? `[ ROUND ${round?.number ?? 1} / 8 ]`
@@ -195,6 +211,7 @@ export default function GamePage() {
                 state={podiumState(p.displayName)}
                 isMe={p.displayName === myName}
                 tokens={tokens[p.displayName] ?? p.tokensRemaining}
+                size={wide ? 78 : 58}
               />
             ))}
           </div>
@@ -354,7 +371,7 @@ export default function GamePage() {
 
             {msg && <div className="error">{msg}</div>}
           </div>
-        </>
+        </div>
       )}
     </div>
   );
