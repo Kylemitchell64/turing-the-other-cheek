@@ -41,6 +41,27 @@ export const api = {
   putCharacter: (token, config) => request("/api/profile/character", { method: "PUT", token, body: config }),
   // Rewards the signed-in player holds: unlocked premium outfit/accessory ids + cheat cards.
   getRewards: (token) => request("/api/profile/rewards", { token }),
+
+  // Public maintenance probe — no auth. { maintenance: bool, message: string? }.
+  getStatus: () => request("/api/status"),
+
+  // --- admin dashboard (all gated server-side by the AdminOnly policy) ---
+  adminOverview: (token) => request("/api/admin/overview", { token }),
+  adminTimeline: (token) => request("/api/admin/timeline", { token }),
+  adminFreeTier: (token) => request("/api/admin/freetier", { token }),
+  adminUsers: (token, { search = "", page = 1, pageSize = 20 } = {}) => {
+    const q = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (search) q.set("search", search);
+    return request(`/api/admin/users?${q.toString()}`, { token });
+  },
+  adminGrant: (token, id, kind) =>
+    request(`/api/admin/users/${id}/rewards`, { method: "POST", token, body: { kind } }),
+  adminRevoke: (token, id, kind) =>
+    request(`/api/admin/users/${id}/rewards?kind=${encodeURIComponent(kind)}`, { method: "DELETE", token }),
+  adminMaintenance: (token, on, message) =>
+    request("/api/admin/maintenance", { method: "POST", token, body: { on, message } }),
+  adminRestart: (token) => request("/api/admin/restart", { method: "POST", token, body: {} }),
+  adminWipe: (token, confirm) => request("/api/admin/wipe", { method: "POST", token, body: { confirm } }),
 };
 
 // Estimate client clock skew (ms) vs the server using the HTTP Date response header,

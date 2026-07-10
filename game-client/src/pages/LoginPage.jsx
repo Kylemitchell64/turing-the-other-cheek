@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { useLobby } from "../game/LobbyContext";
 import { needsCreator } from "../auth/firstUse";
+import MaintenanceBanner from "../components/MaintenanceBanner";
 
 // Shown once per device before the very first guest play so nobody is surprised that a
 // guest name can get swept. After that, PLAY goes straight through.
@@ -79,6 +80,7 @@ export default function LoginPage() {
 
   return (
     <div className="screen center">
+      <MaintenanceBanner />
       <div className="panel">
         <h1 className="glow">TURING THE OTHER CHEEK</h1>
         <p className="tagline">one of you isn't human. find them.</p>

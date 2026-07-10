@@ -9,6 +9,7 @@ import LobbyPage from "./pages/LobbyPage";
 import GamePage from "./pages/GamePage";
 import WritingSamplesPage from "./pages/WritingSamplesPage";
 import StatsPage from "./pages/StatsPage";
+import AdminPage from "./pages/AdminPage";
 
 export default function App() {
   return (
@@ -68,6 +69,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <StatsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute>
+            <AdminPage />
           </ProtectedRoute>
         }
       />

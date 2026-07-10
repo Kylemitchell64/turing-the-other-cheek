@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { useLobby } from "../game/LobbyContext";
+import MaintenanceBanner from "../components/MaintenanceBanner";
 
 export default function HomePage() {
   const { user, logout } = useAuth();
@@ -41,12 +42,21 @@ export default function HomePage() {
     }
   };
 
+  const isAdmin = user?.isAdmin === "true";
+
   return (
     <div className="screen">
       <div className="topbar">
         <span className="who">{user?.displayName || user?.unique_name}</span>
-        <button className="ghost" onClick={logout}>log out</button>
+        <div className="topbar-actions">
+          {isAdmin && (
+            <button className="link admin-link" onClick={() => navigate("/admin")}>[ADMIN]</button>
+          )}
+          <button className="ghost" onClick={logout}>log out</button>
+        </div>
       </div>
+
+      <MaintenanceBanner />
 
       <div className="home-grid">
       <div className="panel">
