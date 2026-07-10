@@ -54,6 +54,12 @@ export default function AdminPage() {
   const [usersData, setUsersData] = useState(null);
   const [notice, setNotice] = useState(null);
 
+  // Ops: current maintenance switch (seeded once from the public probe), and the modal
+  // machine driving the restart + wipe confirmations.
+  const [maintOn, setMaintOn] = useState(false);
+  const [maintMsg, setMaintMsg] = useState("");
+  const [modal, setModal] = useState(null); // null | "restart" | "wipe"
+
   // Live-ish analytics: pull the read endpoints on mount and refresh the volatile ones.
   useEffect(() => {
     if (!isAdmin) return;
@@ -99,6 +105,40 @@ export default function AdminPage() {
     await loadUsers();
   };
 
+  // Seed the maintenance form from the live status once (later edits are the operator's).
+  useEffect(() => {
+    if (!isAdmin) return;
+    let alive = true;
+    (async () => {
+      const { ok, data } = await api.getStatus();
+      if (alive && ok && data) { setMaintOn(!!data.maintenance); setMaintMsg(data.message || ""); }
+    })();
+    return () => { alive = false; };
+  }, [isAdmin]);
+
+  const applyMaintenance = async (on) => {
+    const { ok, data } = await api.adminMaintenance(token, on, maintMsg);
+    if (ok) { setMaintOn(!!data.maintenance); setNotice(data.maintenance ? "maintenance ON" : "maintenance off"); }
+    else setNotice("couldn't change maintenance");
+  };
+
+  const doRestart = async () => {
+    setModal(null);
+    const { ok } = await api.adminRestart(token);
+    setNotice(ok ? "restart requested — the server is coming back up…" : "restart failed");
+  };
+
+  const doWipe = async () => {
+    setModal(null);
+    const { ok, data } = await api.adminWipe(token, "WIPE EVERYTHING");
+    if (ok) {
+      setNotice(`wiped — ${data.accountsRemoved} accounts removed, ${data.adminsKept} kept`);
+      await loadUsers();
+    } else {
+      setNotice("wipe failed");
+    }
+  };
+
   if (!isAdmin) return <NotAdmin onHome={() => navigate("/")} />;
 
   return (
@@ -122,6 +162,23 @@ export default function AdminPage() {
         onGrant={grant}
         onRevoke={revoke}
       />
+
+      <Ops
+        maintOn={maintOn}
+        maintMsg={maintMsg}
+        onMsg={setMaintMsg}
+        onApply={applyMaintenance}
+        onRestart={() => setModal("restart")}
+      />
+
+      <DangerZone onWipe={() => setModal("wipe")} />
+
+      {modal === "restart" && (
+        <RestartModal onConfirm={doRestart} onCancel={() => setModal(null)} />
+      )}
+      {modal === "wipe" && (
+        <WipeModal onConfirm={doWipe} onCancel={() => setModal(null)} />
+      )}
     </div>
   );
 }
@@ -339,6 +396,130 @@ function UserRow({ u, maxUsage, onGrant, onRevoke }) {
         </select>
         <button className="ghost au-grant-btn" onClick={() => onGrant(u.id, kind)}>+</button>
       </span>
+    </div>
+  );
+}
+
+function Ops({ maintOn, maintMsg, onMsg, onApply, onRestart }) {
+  return (
+    <section className="admin-section">
+      <div className="crt-head">[ OPS ]</div>
+      <div className="ops-box">
+        <div className="ops-row">
+          <span className={`ops-state ${maintOn ? "on" : ""}`}>
+            maintenance {maintOn ? "ON — new games paused" : "off"}
+          </span>
+        </div>
+        <textarea
+          className="sample-input ops-msg"
+          placeholder="operator message shown to players while paused…"
+          value={maintMsg}
+          onChange={(e) => onMsg(e.target.value)}
+          maxLength={200}
+        />
+        <div className="ops-actions">
+          {maintOn ? (
+            <button className="ghost" onClick={() => onApply(false)}>resume games</button>
+          ) : (
+            <button className="danger-btn ops-pause" onClick={() => onApply(true)}>pause for maintenance</button>
+          )}
+          {maintOn && (
+            <button className="ghost" onClick={() => onApply(true)}>update message</button>
+          )}
+          <button className="ghost ops-restart" onClick={onRestart}>restart server</button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DangerZone({ onWipe }) {
+  return (
+    <section className="admin-section danger-zone">
+      <div className="crt-head danger-head">[ DANGER ZONE ]</div>
+      <div className="danger-box">
+        <p className="danger-copy">
+          wipe every game and all non-admin accounts. permanent. admin logins survive.
+        </p>
+        <button className="danger-btn" onClick={onWipe}>wipe everything…</button>
+      </div>
+    </section>
+  );
+}
+
+function RestartModal({ onConfirm, onCancel }) {
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal terminal" onClick={(e) => e.stopPropagation()}>
+        <h2 className="modal-head">[ RESTART SERVER ]</h2>
+        <p className="modal-copy">
+          the server process will exit and relaunch. active lobbies drop and the maintenance
+          flag clears. a running game in progress will be lost.
+        </p>
+        <button className="danger-btn" onClick={onConfirm}>restart now</button>
+        <button className="link" onClick={onCancel}>cancel</button>
+      </div>
+    </div>
+  );
+}
+
+const WIPE_PHRASE = "WIPE EVERYTHING";
+
+// Three escalating gates; the last requires typing the exact phrase.
+function WipeModal({ onConfirm, onCancel }) {
+  const [step, setStep] = useState(1);
+  const [phrase, setPhrase] = useState("");
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal terminal wipe-modal" onClick={(e) => e.stopPropagation()}>
+        <h2 className="modal-head danger-head">[ WIPE — STEP {step} / 3 ]</h2>
+
+        {step === 1 && (
+          <>
+            <p className="modal-copy">
+              this deletes ALL game history and EVERY non-admin account, along with their
+              characters, samples, stats, and rewards. there is no undo.
+            </p>
+            <button className="danger-btn" onClick={() => setStep(2)}>I understand — continue</button>
+            <button className="link" onClick={onCancel}>cancel</button>
+          </>
+        )}
+
+        {step === 2 && (
+          <>
+            <p className="modal-copy">
+              last chance to back out. only admin logins will remain afterward. are you
+              absolutely sure?
+            </p>
+            <button className="danger-btn" onClick={() => setStep(3)}>yes, I'm sure</button>
+            <button className="link" onClick={onCancel}>cancel</button>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <p className="modal-copy">
+              type <b className="ai-name">{WIPE_PHRASE}</b> to confirm.
+            </p>
+            <input
+              type="text"
+              value={phrase}
+              onChange={(e) => setPhrase(e.target.value)}
+              placeholder={WIPE_PHRASE}
+              autoFocus
+            />
+            <button
+              className="danger-btn"
+              disabled={phrase !== WIPE_PHRASE}
+              onClick={onConfirm}
+            >
+              wipe everything
+            </button>
+            <button className="link" onClick={onCancel}>cancel</button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
