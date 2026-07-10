@@ -65,6 +65,9 @@ public class SamplesController : ControllerBase
         _db.WritingSamples.Add(sample);
         await _db.SaveChangesAsync();
 
+        // Enforce the per-tier rolling cap (guest 10 / user 200): drop the oldest beyond it.
+        await SampleCaps.EnforceAsync(_db, UserId);
+
         return Ok(new SampleDto(sample.Id, sample.Text, sample.Source.ToString(), sample.CreatedAt));
     }
 

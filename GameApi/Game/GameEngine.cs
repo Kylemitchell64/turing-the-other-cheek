@@ -774,6 +774,16 @@ public class GameEngine : BackgroundService
 
             await db.SaveChangesAsync();
 
+            // Enforce the per-tier sample cap for everyone who just had answers harvested
+            // (guest 10 / user 200) — trims oldest beyond the cap. Tier read off the
+            // finisher rows we already loaded.
+            var isGuestById = finisherUsers.ToDictionary(u => u.Id, u => u.IsGuest, StringComparer.Ordinal);
+            foreach (var uid in harvestedUserIds)
+            {
+                var isGuest = isGuestById.TryGetValue(uid, out var g) && g;
+                await SampleCaps.EnforceAsync(db, uid, isGuest);
+            }
+
             // How often Gemini flaked this game (rate limits / errors → canned answers).
             if (snap.FallbackCount > 0)
                 _logger.LogInformation(
