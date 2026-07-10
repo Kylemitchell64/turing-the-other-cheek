@@ -15,6 +15,7 @@ public class GameContext : IdentityDbContext<ApplicationUser>
     public DbSet<GameMessage> GameMessages => Set<GameMessage>();
     public DbSet<GameRoundPrompt> GameRoundPrompts => Set<GameRoundPrompt>();
     public DbSet<PlayerStats> PlayerStats => Set<PlayerStats>();
+    public DbSet<UserReward> UserRewards => Set<UserReward>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -93,6 +94,16 @@ public class GameContext : IdentityDbContext<ApplicationUser>
         builder.Entity<PlayerStats>(e =>
         {
             e.HasIndex(p => p.UserId).IsUnique();
+            e.HasOne(p => p.User)
+                .WithMany()
+                .HasForeignKey(p => p.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<UserReward>(e =>
+        {
+            e.Property(p => p.Kind).HasMaxLength(64);
+            e.HasIndex(p => p.UserId);
             e.HasOne(p => p.User)
                 .WithMany()
                 .HasForeignKey(p => p.UserId)

@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
+using GameApi.Admin;
 using GameApi.Dtos;
 using GameApi.Models;
 
@@ -31,13 +32,22 @@ public class JwtTokenService
             ?? _configuration["Jwt:Key"]
             ?? throw new InvalidOperationException("JWT_KEY is not configured");
 
+        // Admin gate (phase 18): the isAdmin claim is minted here, at login/OAuth-callback
+        // time, only for a Google account whose email is on the ADMIN_EMAILS allowlist. The
+        // externalProvider claim rides along so the "AdminOnly" policy can re-check
+        // provider == Google without a DB hit. Both are baked into the signed token, so a
+        // client can't forge admin access.
+        var isAdmin = AdminEmails.IsAdmin(_configuration, user.Email, user.ExternalProvider);
+
         var claims = new[]
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id),
             new Claim(ClaimTypes.Name, user.UserName!),
             new Claim("displayName", user.DisplayName ?? user.UserName!),
             new Claim("isGuest", user.IsGuest ? "true" : "false"),
-            new Claim("needsUsername", user.NeedsUsername ? "true" : "false")
+            new Claim("needsUsername", user.NeedsUsername ? "true" : "false"),
+            new Claim("externalProvider", user.ExternalProvider ?? ""),
+            new Claim("isAdmin", isAdmin ? "true" : "false")
         };
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));

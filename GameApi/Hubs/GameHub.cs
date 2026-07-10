@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using GameApi.Admin;
 using GameApi.Characters;
 using GameApi.Data;
 using GameApi.GameLoop;
@@ -22,14 +23,27 @@ public class GameHub : Hub
     private readonly LobbyStore _store;
     private readonly GameEngine _engine;
     private readonly GameContext _db;
+    private readonly MaintenanceState _maintenance;
     private readonly ILogger<GameHub> _logger;
 
-    public GameHub(LobbyStore store, GameEngine engine, GameContext db, ILogger<GameHub> logger)
+    public GameHub(LobbyStore store, GameEngine engine, GameContext db, MaintenanceState maintenance, ILogger<GameHub> logger)
     {
         _store = store;
         _engine = engine;
         _db = db;
+        _maintenance = maintenance;
         _logger = logger;
+    }
+
+    // Maintenance pause: new lobbies + game starts are refused with the operator's message.
+    // Running games are untouched so nobody gets dropped mid-round.
+    private void ThrowIfMaintenance()
+    {
+        var (on, message) = _maintenance.Snapshot();
+        if (on)
+            throw new HubException(string.IsNullOrWhiteSpace(message)
+                ? "the game is paused for maintenance, check back soon"
+                : message);
     }
 
     private string UserId =>
@@ -44,6 +58,7 @@ public class GameHub : Hub
     // Host opens a new lobby and is seated as the first player.
     public async Task CreateLobby()
     {
+        ThrowIfMaintenance();
         var lobby = _store.Create(UserId);
         var characterJson = await LoadCharacterJsonAsync(UserId);
 
@@ -63,6 +78,7 @@ public class GameHub : Hub
     // existing seat rather than creating a duplicate.
     public async Task JoinLobby(string code)
     {
+        ThrowIfMaintenance();
         code = (code ?? "").Trim().ToUpperInvariant();
         var lobby = _store.Get(code) ?? throw new HubException("No lobby with that code");
         var characterJson = await LoadCharacterJsonAsync(UserId);
@@ -98,6 +114,8 @@ public class GameHub : Hub
     // the AI is never last, then announces GameStarted.
     public async Task StartGame()
     {
+        ThrowIfMaintenance();
+
         // Find which lobby this caller hosts by scanning their connection group is
         // awkward; instead we require the caller to be in exactly one lobby. Look
         // it up from their connection.
@@ -110,6 +128,12 @@ public class GameHub : Hub
         lock (lobby.Sync)
             memberIds.AddRange(lobby.Players.Select(p => p.UserId));
         await _engine.RefreshStyleProfilesAsync(memberIds);
+
+        // Cheat-card rewards (phase 18): read each member's oldest unconsumed cheat card
+        // now (read-only). Under the lock below we bump those players to a 4th fake-out
+        // token this game; the reward is stamped consumed only after the start succeeds, so
+        // a start that throws its validations never burns anybody's card.
+        var cheatCards = await LoadOldestCheatCardsAsync(memberIds);
 
         List<RosterEntryDto> roster;
         var outbound = new List<Func<Task>>();
@@ -132,6 +156,12 @@ public class GameHub : Hub
             if (humanCount > 8)
                 throw new HubException("Too many players (max 8)");
 
+            // Apply cheat cards: a holder seats with 4 tokens this game instead of 3. Done
+            // after any rematch reset (which set everyone back to 3) so it always sticks.
+            foreach (var p in lobby.Players)
+                if (cheatCards.ContainsKey(p.UserId))
+                    p.TokensRemaining = 4;
+
             // Fresh AI name each game (including rematches), colliding with no real player.
             var aiName = _store.PickAiName(lobby.Players.Select(p => p.DisplayName));
             lobby.AiDisplayName = aiName;
@@ -153,10 +183,51 @@ public class GameHub : Hub
             _engine.BeginGame(lobby, outbound);
         }
 
+        // The start succeeded — NOW burn the cheat cards that seated players with 4 tokens.
+        await ConsumeCheatCardsAsync(cheatCards);
+
         _logger.LogInformation("Lobby {Code} started with {Count} in roster", lobby.Code, roster.Count);
         await Clients.Group(lobby.Code).SendAsync("GameStarted", roster);
         foreach (var send in outbound)
             await send();
+    }
+
+    // Oldest unconsumed cheat card per member (userId -> reward id). Read-only; the
+    // caller stamps them consumed only after the start actually succeeds.
+    private async Task<Dictionary<string, int>> LoadOldestCheatCardsAsync(List<string> memberIds)
+    {
+        try
+        {
+            var cards = await _db.UserRewards
+                .Where(r => memberIds.Contains(r.UserId) && r.Kind == "cheat_card" && r.ConsumedAt == null)
+                .GroupBy(r => r.UserId)
+                .Select(g => new { UserId = g.Key, Id = g.OrderBy(r => r.GrantedAt).ThenBy(r => r.Id).First().Id })
+                .ToListAsync();
+            return cards.ToDictionary(c => c.UserId, c => c.Id);
+        }
+        catch (Exception ex)
+        {
+            // A dead DB must never block a game start — cheat cards just don't apply.
+            _logger.LogWarning(ex, "cheat card lookup failed, starting without them");
+            return new Dictionary<string, int>();
+        }
+    }
+
+    private async Task ConsumeCheatCardsAsync(Dictionary<string, int> cards)
+    {
+        if (cards.Count == 0) return;
+        try
+        {
+            var ids = cards.Values.ToList();
+            var rewards = await _db.UserRewards.Where(r => ids.Contains(r.Id)).ToListAsync();
+            foreach (var r in rewards) r.ConsumedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            // Worst case a card survives to another game — better than failing the start.
+            _logger.LogWarning(ex, "cheat card consume failed");
+        }
     }
 
     // Host-only, pre-start only: pick the prompt pack, impostor difficulty, and answer

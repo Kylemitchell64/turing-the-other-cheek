@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using GameApi.Admin;
 using GameApi.Auth;
 using GameApi.Characters;
 using GameApi.Data;
@@ -60,13 +61,63 @@ public class ProfileController : ControllerBase
         return new JsonResult(cfg);
     }
 
+    // GET /api/profile/rewards — the signed-in player's held rewards, in the shape the
+    // character creator reads: which premium outfit/accessory ids they've unlocked, and how
+    // many unconsumed cheat cards they hold. Nothing here is identity-sensitive.
+    [HttpGet("rewards")]
+    public async Task<IActionResult> GetRewards()
+    {
+        var rewards = await _db.UserRewards
+            .Where(r => r.UserId == UserId)
+            .ToListAsync();
+
+        var outfits = new SortedSet<int>();
+        var accessories = new SortedSet<int>();
+        var cheatCards = 0;
+        foreach (var r in rewards)
+        {
+            if (r.Kind == RewardKinds.CheatCard)
+            {
+                if (r.ConsumedAt == null) cheatCards++;
+            }
+            else if (RewardKinds.TryOutfit(r.Kind, out var o)) outfits.Add(o);
+            else if (RewardKinds.TryAccessory(r.Kind, out var a)) accessories.Add(a);
+        }
+
+        return Ok(new
+        {
+            unlockedOutfits = outfits.ToArray(),
+            unlockedAccessories = accessories.ToArray(),
+            cheatCards
+        });
+    }
+
     // PUT /api/profile/character — save this player's character. Validates known keys
     // only, each index inside the sprite system's real ranges; rejects anything else.
+    // Premium outfit/accessory ids (above the free set) additionally require the player to
+    // hold the matching unlock reward — so a client can't save a locked look it wasn't granted.
     [HttpPut("character")]
     public async Task<IActionResult> PutCharacter([FromBody] JsonElement body)
     {
         if (!CharacterDefaults.TryParse(body, out var cfg, out var error) || cfg == null)
             return BadRequest(new { error = error ?? "invalid character" });
+
+        // Reward gate: anything above the free set must be unlocked for this user.
+        if (!CharacterDefaults.IsOutfitFree(cfg.Outfit) || !CharacterDefaults.IsAccessoryFree(cfg.Accessory))
+        {
+            var kinds = await _db.UserRewards
+                .Where(r => r.UserId == UserId)
+                .Select(r => r.Kind)
+                .ToListAsync();
+            var unlockedOutfits = kinds.Select(k => RewardKinds.TryOutfit(k, out var o) ? o : -1).ToHashSet();
+            var unlockedAccessories = kinds.Select(k => RewardKinds.TryAccessory(k, out var a) ? a : -1).ToHashSet();
+
+            if (!CharacterDefaults.IsOutfitFree(cfg.Outfit) && !unlockedOutfits.Contains(cfg.Outfit))
+                return BadRequest(new { error = "that outfit is locked — earn it as a reward" });
+            if (!CharacterDefaults.IsAccessoryFree(cfg.Accessory) &&
+                cfg.Accessory is int accId && !unlockedAccessories.Contains(accId))
+                return BadRequest(new { error = "that accessory is locked — earn it as a reward" });
+        }
 
         var user = await _userManager.FindByIdAsync(UserId);
         if (user == null) return NotFound();

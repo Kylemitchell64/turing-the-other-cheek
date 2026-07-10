@@ -24,6 +24,7 @@ public class AuthController : ControllerBase
     private readonly OAuthService _oauth;
     private readonly IWebHostEnvironment _env;
     private readonly JwtTokenService _tokens;
+    private readonly IConfiguration _config;
 
     // 3-20 chars, letters/digits/underscore. Shared by guest login + username generation.
     private static readonly Regex UsernameRegex = new("^[A-Za-z0-9_]{3,20}$", RegexOptions.Compiled);
@@ -34,7 +35,8 @@ public class AuthController : ControllerBase
         ILogger<AuthController> logger,
         OAuthService oauth,
         IWebHostEnvironment env,
-        JwtTokenService tokens)
+        JwtTokenService tokens,
+        IConfiguration config)
     {
         _userManager = userManager;
         _signInManager = signInManager;
@@ -42,6 +44,7 @@ public class AuthController : ControllerBase
         _oauth = oauth;
         _env = env;
         _tokens = tokens;
+        _config = config;
     }
 
     // POST /api/auth/register
@@ -99,7 +102,10 @@ public class AuthController : ControllerBase
             username = user.UserName,
             displayName = user.DisplayName,
             isGuest = user.IsGuest,
-            needsUsername = user.NeedsUsername
+            needsUsername = user.NeedsUsername,
+            // Admin dashboard gate: a Google account whose email is allowlisted. The client
+            // uses this to reveal the /admin route + the Home [ADMIN] link.
+            isAdmin = Admin.AdminEmails.IsAdmin(_config, user.Email, user.ExternalProvider)
         });
     }
 

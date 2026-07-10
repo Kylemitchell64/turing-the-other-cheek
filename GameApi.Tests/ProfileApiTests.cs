@@ -38,19 +38,20 @@ public class ProfileApiTests : IClassFixture<TestAppFactory>
     {
         var client = await AuthedClientAsync();
 
-        var saved = await PutCharacterAsync(client, "{\"base\":3,\"hair\":7,\"outfit\":2,\"accessory\":4}");
+        // accessory 1 is in the free set — premium ids (3+) need a reward, covered below.
+        var saved = await PutCharacterAsync(client, "{\"base\":3,\"hair\":7,\"outfit\":2,\"accessory\":1}");
         Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
         var cfg = await saved.Content.ReadFromJsonAsync<CharacterDto>();
         Assert.Equal(3, cfg!.Base);
         Assert.Equal(7, cfg.Hair);
         Assert.Equal(2, cfg.Outfit);
-        Assert.Equal(4, cfg.Accessory);
+        Assert.Equal(1, cfg.Accessory);
 
         var got = await client.GetFromJsonAsync<CharacterDto>("/api/profile/character");
         Assert.Equal(3, got!.Base);
         Assert.Equal(7, got.Hair);
         Assert.Equal(2, got.Outfit);
-        Assert.Equal(4, got.Accessory);
+        Assert.Equal(1, got.Accessory);
     }
 
     [Fact]

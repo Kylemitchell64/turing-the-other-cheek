@@ -114,6 +114,11 @@ builder.Services.AddRateLimiter(o =>
         if (context.Request.Path.StartsWithSegments("/hubs"))
             return System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter("hub");
 
+        // Admin dashboard polls its analytics endpoints on a timer; exempt like /hubs.
+        // It's already locked behind the AdminOnly policy (Google + allowlisted email).
+        if (context.Request.Path.StartsWithSegments("/api/admin"))
+            return System.Threading.RateLimiting.RateLimitPartition.GetNoLimiter("admin");
+
         var permits = context.RequestServices.GetRequiredService<IConfiguration>()
             .GetValue<int?>("RateLimit:PermitsPerMinute") ?? 30;
         return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
@@ -151,6 +156,19 @@ builder.Services.AddSingleton<GameApi.Auth.OAuthService>();
 
 // Mints JWTs / AuthResponses for both AuthController and ProfileController's username claim.
 builder.Services.AddSingleton<GameApi.Auth.JwtTokenService>();
+
+// Admin dashboard (phase 18): the AdminOnly policy gates /api/admin/* on two claims the
+// JWT carries — isAdmin (email ∈ ADMIN_EMAILS, minted only for Google accounts) AND
+// externalProvider == Google (Kyle's rule: admin access via Google sign-in). The
+// maintenance switch is a process-wide singleton the hub + /api/status read.
+builder.Services.AddAuthorization(o =>
+{
+    o.AddPolicy("AdminOnly", p => p
+        .RequireAuthenticatedUser()
+        .RequireClaim("isAdmin", "true")
+        .RequireClaim("externalProvider", "Google"));
+});
+builder.Services.AddSingleton<GameApi.Admin.MaintenanceState>();
 
 // Realtime: SignalR + the process-wide in-memory lobby store.
 builder.Services.AddSignalR();

@@ -21,6 +21,17 @@ public static class CharacterDefaults
     public const int OutfitCount = 10;   // outfit 0..9
     public const int AccessoryCount = 6; // accessory 0..5, or null for none
 
+    // The free set everyone can save without a reward. Outfits/accessories above these are
+    // "premium" — an admin grants an "outfit:<id>" / "accessory:<id>" reward (phase 18) to
+    // unlock saving that specific id in the creator. Bases + hair are always free.
+    // Name-hash defaults ignore this gate entirely (a derived look is never "saved").
+    public const int FreeOutfitCount = 6;    // outfits 0..5 free, 6..9 reward-locked
+    public const int FreeAccessoryCount = 3; // accessories 0..2 free, 3..5 reward-locked
+
+    public static bool IsOutfitFree(int index) => index >= 0 && index < FreeOutfitCount;
+    public static bool IsAccessoryFree(int? index) =>
+        index is null || (index >= 0 && index < FreeAccessoryCount);
+
     // FNV-1a, identical to the JS hashName: 32-bit unsigned, wrapping multiply.
     public static uint HashName(string? name)
     {

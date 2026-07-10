@@ -117,8 +117,9 @@ public class LobbyHubTests : IClassFixture<TestAppFactory>
             host.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", hostBody!.Token);
             // Custom character for the host so at least one seat is non-default.
+            // (outfit 4 = free set; premium ids need a reward, covered in AdminApiTests)
             var put = await host.PutAsync("/api/profile/character",
-                new StringContent("{\"base\":5,\"hair\":2,\"outfit\":8,\"accessory\":1}",
+                new StringContent("{\"base\":5,\"hair\":2,\"outfit\":4,\"accessory\":1}",
                     System.Text.Encoding.UTF8, "application/json"));
             put.EnsureSuccessStatusCode();
 
@@ -146,7 +147,7 @@ public class LobbyHubTests : IClassFixture<TestAppFactory>
             Assert.All(hostLobby!.Players, p => Assert.NotNull(p.Character));
             var hostSeat = hostLobby.Players.First(p => p.DisplayName == "Hostie");
             Assert.Equal(5, hostSeat.Character!.Base);
-            Assert.Equal(8, hostSeat.Character.Outfit);
+            Assert.Equal(4, hostSeat.Character.Outfit);
 
             await hostConn.InvokeAsync("StartGame");
             await WaitFor(() => roster != null, "no GameStarted");
