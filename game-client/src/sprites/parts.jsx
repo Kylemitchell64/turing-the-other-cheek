@@ -195,7 +195,10 @@ export function Accessory({ accessory }) {
 }
 
 // ---- face: eyes / brows / mouth, chosen by animation state ----
-export function Face({ state }) {
+// `look` ({ dx, dy }) nudges the eyes so the character glances around; `blink` collapses
+// them to closed lines briefly (phase 21 dressing-room idle). Both are optional — omitted
+// everywhere except the character creator, so podium/roster faces are unchanged.
+export function Face({ state, look = null, blink = false }) {
   const dark = "#1a1a1a";
   // Group states into a handful of expressions.
   const happy = state === "excited" || state === "victorious";
@@ -246,6 +249,18 @@ export function Face({ state }) {
     );
   }
 
+  // Blink overrides the eyes with closed lines. A tiny look offset translates just the eyes
+  // (not brows/mouth) so it reads as a glance. Both only kick in for the creator preview.
+  if (blink) {
+    eyes = (
+      <g fill={dark}>
+        <rect x="11.2" y="11.9" width="2.8" height="0.6" rx="0.3" />
+        <rect x="17.8" y="11.9" width="2.8" height="0.6" rx="0.3" />
+      </g>
+    );
+  }
+  const lookT = look ? `translate(${look.dx || 0} ${look.dy || 0})` : undefined;
+
   // confused: raise one brow
   const brow = confused ? (
     <path d="M17.8 9.6 L20.8 9" stroke={dark} strokeWidth="0.7" {...smooth} />
@@ -270,7 +285,7 @@ export function Face({ state }) {
   return (
     <g>
       {cheeks}
-      {eyes}
+      <g transform={lookT} style={{ transition: "transform 0.4s ease-in-out" }}>{eyes}</g>
       {brow}
       {mouth}
     </g>

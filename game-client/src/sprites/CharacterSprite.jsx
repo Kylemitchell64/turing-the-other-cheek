@@ -19,7 +19,10 @@ const SPRITE_STATES = [
 
 // Layered chibi character. Pass an explicit `config` (phase-12 creator) or let it derive
 // deterministically from `name` — which also gives the AI a plausible character for free.
-export default function CharacterSprite({ config, name, state = "neutral", size = 56, title }) {
+// `look` ({ dx, dy }) and `blink` are optional idle-life inputs (phase 21): the character
+// creator drives them to make the preview glance around + blink. They default to no-op, so
+// every existing podium/roster usage renders exactly as before.
+export default function CharacterSprite({ config, name, state = "neutral", size = 56, title, look = null, blink = false }) {
   const cfg = normalizeConfig(config, name);
   const st = SPRITE_STATES.includes(state) ? state : "neutral";
   const label = title || `${name || "player"} — ${st}`;
@@ -50,7 +53,7 @@ export default function CharacterSprite({ config, name, state = "neutral", size 
             {/* head group tilts for sad/defeated */}
             <g className="sp-head">
               <Hair hair={cfg.hair} />
-              <Face state={st} />
+              <Face state={st} look={look} blink={blink} />
               <Accessory accessory={cfg.accessory} />
               {/* red anger flash over the head */}
               {st === "mad" && <rect className="sp-flash" x="6.5" y="2" width="19" height="17" rx="6.5" fill="#ff3b4e" />}

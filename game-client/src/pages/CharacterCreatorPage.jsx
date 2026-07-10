@@ -47,6 +47,35 @@ export default function CharacterCreatorPage() {
   const [unlockedOutfits, setUnlockedOutfits] = useState(() => new Set());
   const [unlockedAccessories, setUnlockedAccessories] = useState(() => new Set());
 
+  // Dressing-room idle life (phase 21): the preview periodically glances around, blinks, and
+  // shifts its weight on randomized timers — a cute retro fidget. Disabled under
+  // prefers-reduced-motion (a still, forward-facing character).
+  const [idle, setIdle] = useState({ look: { dx: 0, dy: 0 }, blink: false, lean: 0 });
+  useEffect(() => {
+    const reduced =
+      window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) return;
+    const timers = [];
+    const rand = (lo, hi) => lo + Math.random() * (hi - lo);
+    const glance = () => {
+      setIdle((s) => ({ ...s, look: { dx: rand(-1.2, 1.2), dy: rand(0, 0.6) } }));
+      timers.push(setTimeout(glance, rand(1800, 3600)));
+    };
+    const blink = () => {
+      setIdle((s) => ({ ...s, blink: true }));
+      timers.push(setTimeout(() => setIdle((s) => ({ ...s, blink: false })), 140));
+      timers.push(setTimeout(blink, rand(2400, 5200)));
+    };
+    const sway = () => {
+      setIdle((s) => ({ ...s, lean: [-1, 0, 1][Math.floor(rand(0, 3))] }));
+      timers.push(setTimeout(sway, rand(2400, 4200)));
+    };
+    timers.push(setTimeout(glance, 1200));
+    timers.push(setTimeout(blink, 2000));
+    timers.push(setTimeout(sway, 1600));
+    return () => timers.forEach(clearTimeout);
+  }, []);
+
   // Prefill: the saved config if there is one, otherwise the name-hash default so the
   // creator always opens on the exact character they'd have had by default.
   useEffect(() => {
@@ -162,7 +191,19 @@ export default function CharacterCreatorPage() {
 
         <div className="creator-stage">
           {config && (
-            <CharacterSprite name={username} config={config} state="neutral" size={132} />
+            <div
+              className="creator-idle"
+              style={{ transform: `rotate(${idle.lean * 1.6}deg) translateX(${idle.lean * 2}px)` }}
+            >
+              <CharacterSprite
+                name={username}
+                config={config}
+                state="neutral"
+                size={132}
+                look={idle.look}
+                blink={idle.blink}
+              />
+            </div>
           )}
         </div>
         <p className="creator-who">CHARACTER: <b>{username}</b></p>

@@ -179,16 +179,62 @@
   text-shadow: none;
 }
 
+/* --- mascot robot (phase 21) --- */
+.robot {
+  display: block;
+  overflow: visible;
+}
+.robot g {
+  transform-box: fill-box;
+}
+/* head pivots smoothly when it glances around (transform set inline by RobotSprite) */
+.robot .rb-head {
+  transition: transform 0.5s ease-in-out;
+  transform-origin: 50% 90%;
+}
+/* the single LED eye — mostly on, an occasional quick blink */
+.rb-led { animation: rb-blink 3.4s steps(1) infinite; }
+@keyframes rb-blink {
+  0%, 92%, 100% { opacity: 1; }
+  95% { opacity: 0.08; }
+}
+/* antenna ball pulse + chest status LEDs flicker */
+.rb-ball { animation: rb-pulse 1.5s ease-in-out infinite; transform-origin: 50% 50%; }
+@keyframes rb-pulse {
+  0%, 100% { opacity: 0.65; }
+  50% { opacity: 1; }
+}
+.rb-chest.d1 { animation: rb-flick 1.3s steps(1) infinite; }
+.rb-chest.d2 { animation: rb-flick 1.7s steps(1) 0.2s infinite; }
+.rb-chest.d3 { animation: rb-flick 2.1s steps(1) 0.4s infinite; }
+@keyframes rb-flick {
+  0%, 70% { opacity: 1; }
+  80% { opacity: 0.3; }
+}
+/* walk: legs shuffle, arms swing opposite, body bobs */
+.robot.walk .rb-body { animation: rb-bob 0.44s steps(2) infinite alternate; transform-origin: 50% 100%; }
+.robot.walk .rb-leg-l { animation: rb-step 0.44s steps(2) infinite alternate; transform-origin: 50% 0%; }
+.robot.walk .rb-leg-r { animation: rb-step 0.44s steps(2) infinite alternate-reverse; transform-origin: 50% 0%; }
+.robot.walk .rb-arm-l { animation: rb-swing 0.44s steps(2) infinite alternate-reverse; transform-origin: 50% 0%; }
+.robot.walk .rb-arm-r { animation: rb-swing 0.44s steps(2) infinite alternate; transform-origin: 50% 0%; }
+@keyframes rb-bob { from { transform: translateY(0); } to { transform: translateY(-1.2px); } }
+@keyframes rb-step { from { transform: translateY(0) rotate(-6deg); } to { transform: translateY(-1.5px) rotate(6deg); } }
+@keyframes rb-swing { from { transform: rotate(-8deg); } to { transform: rotate(8deg); } }
+
 /* prefers-reduced-motion: kill every sprite animation + transient transforms, but keep
-   the static tell (head tilt for sad/defeated, the dim, the marks). */
+   the static tell (head tilt for sad/defeated, the dim, the marks). The robot goes fully
+   static too (HomeRobot also stops wandering). */
 @media (prefers-reduced-motion: reduce) {
   .sprite *,
-  .sprite {
+  .sprite,
+  .robot *,
+  .robot {
     animation: none !important;
   }
   .s-confused .sp-sway,
   .s-mad .sp-shake {
     transform: none !important;
   }
+  .robot .rb-head { transition: none !important; }
   .sp-flash { opacity: 0 !important; }
 }
