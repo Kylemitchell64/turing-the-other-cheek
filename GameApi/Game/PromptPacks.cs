@@ -173,7 +173,112 @@ public static class PromptPacks
             "whats the tallest animal in the world (dont overthink it)",
         });
 
-    public static readonly IReadOnlyList<PromptPack> All = new[] { Family, Adult, Drinking, Trivia };
+    // Earnest-but-light icebreakers, would-you-rathers with a reason, and nostalgia.
+    // Work-safe and sincere — the pack for a room that wants to actually talk.
+    public static readonly PromptPack Deep = new(
+        Key: "deep",
+        DisplayName: "Deep Cuts",
+        Label: "DEEP CUTS",
+        Description: "earnest icebreakers, would-you-rathers, and nostalgia. get a little real.",
+        Prompts: new[]
+        {
+            "the song that instantly takes you back to being 15",
+            "would you rather always be 10 min early or 20 min late, and why",
+            "the small thing that made you ridiculously happy this week",
+            "a hobby you'd pick up if money and time didn't matter",
+            "the show you'd still drop everything to rewatch",
+            "would you rather read minds or be invisible, pick and defend it",
+            "the meal that tastes like your childhood",
+            "a compliment you got once that you still think about",
+            "the thing you were weirdly obsessed with as a kid",
+            "would you rather never lose your keys or never lose your phone, why",
+            "the place you felt most at peace, describe it in one line",
+            "a smell that instantly brings back a specific memory",
+            "the teacher who actually changed something for you",
+            "would you rather have more time or more money, be honest",
+            "the toy or game you'd beg your parents for",
+            "a tiny ritual that makes your day feel right",
+            "the movie you quote way too often",
+            "would you rather relive one day or skip to a future one, which",
+            "the friend you keep meaning to text back",
+            "a skill you're low-key proud of that never comes up",
+            "the snack that defined your after-school years",
+            "would you rather always know the truth or stay blissfully unaware",
+            "the book or story that stuck with you for years",
+            "a place you've never been but really want to see",
+            "the family saying nobody outside your house would get",
+            "would you rather be famous for a day or comfortable forever, why",
+            "the thing you'd tell your 12 year old self",
+            "a moment you realized you were actually growing up",
+            "the game you played till the streetlights came on",
+            "would you rather have a rewind button or a pause button, pick",
+            "the person who taught you something without meaning to",
+            "a comfort show you put on just for the background noise",
+            "the holiday tradition you secretly love",
+            "would you rather live by the ocean or in the mountains, why",
+            "the hobby you quit but kind of miss",
+            "a sound that instantly relaxes you",
+            "the thing you're most looking forward to lately",
+            "would you rather redo your best day or erase your worst, which",
+            "the old friend you'd grab coffee with tomorrow if you could",
+            "a memory you'd keep if you could only keep one",
+        });
+
+    // Work-safe office party: meetings, emails, wfh, printer rage. The pack for a team
+    // offsite or a slack crew — nothing HR would flag.
+    public static readonly PromptPack Office = new(
+        Key: "office",
+        DisplayName: "Water Cooler",
+        Label: "WATER COOLER",
+        Description: "work-safe office party. meetings, emails, wfh chaos, printer rage.",
+        Prompts: new[]
+        {
+            "the meeting that absolutely should have been an email",
+            "your most-used passive aggressive email phrase",
+            "the break room snack you'd riot over if it disappeared",
+            "how many tabs do you have open right now, be honest",
+            "the exact moment you mentally check out on a friday",
+            "your go-to excuse for turning your camera off",
+            "the printer has wronged you — tell us how",
+            "worst buzzword you've heard in a meeting this year",
+            "your fake-busy move when the boss walks by",
+            "the reply-all disaster you witnessed or caused",
+            "what your 'quick sync' actually turns into",
+            "the wfh outfit you'd never admit to on camera",
+            "your most unhinged slack status",
+            "the task you've been 'circling back' to for a month",
+            "what you're really doing during a boring standup",
+            "the office kitchen crime that made you lose faith in people",
+            "your honest answer to 'how's it going' at 9am",
+            "the email you rewrote five times before sending",
+            "worst place someone put you on speaker phone",
+            "your realest reason for booking a conference room",
+            "the calendar invite that ruined your afternoon",
+            "how long your 'be right back' really means",
+            "the coworker habit that lives in your head rent free",
+            "your move when someone schedules a meeting over lunch",
+            "the thing you pretend to understand in every meeting",
+            "worst team-building activity you've been forced into",
+            "your commute story that still haunts you",
+            "the slack channel you muted immediately",
+            "what 'let's take this offline' actually means to you",
+            "the office chair or desk hill you'll die on",
+            "your most creative use of 'per my last email'",
+            "the notification that spikes your blood pressure instantly",
+            "how you really feel about the mandatory fun day",
+            "the coffee order that says everything about a coworker",
+            "your escape plan when a meeting runs over",
+            "the spreadsheet that nearly broke you",
+            "what you'd put in the suggestion box anonymously",
+            "your realest thought during a 'let's circle back next week'",
+            "the desk snack stash you guard with your life",
+            "the one perk that would actually keep you here",
+        });
+
+    // Selector order (Kyle's explicit ask): SFW packs first, the dirty ones LAST.
+    // family, deep, office, trivia, adult, drinking. The client PACKS array mirrors this
+    // and PromptPackParityTests locks the two lists so they can't drift.
+    public static readonly IReadOnlyList<PromptPack> All = new[] { Family, Deep, Office, Trivia, Adult, Drinking };
 
     private static readonly Dictionary<string, PromptPack> ByKey =
         All.ToDictionary(p => p.Key, StringComparer.Ordinal);

@@ -19,6 +19,8 @@ public class PromptPackTests : IClassFixture<TestAppFactory>
 
     [Theory]
     [InlineData("family")]
+    [InlineData("deep")]
+    [InlineData("office")]
     [InlineData("adult")]
     [InlineData("drinking")]
     [InlineData("trivia")]
@@ -41,15 +43,44 @@ public class PromptPackTests : IClassFixture<TestAppFactory>
     }
 
     [Fact]
-    public void Packs_AreFourWithExpectedKeys()
+    public void Packs_HaveExpectedKeysInOrder()
     {
-        Assert.Equal(new[] { "family", "adult", "drinking", "trivia" }, PromptPacks.All.Select(p => p.Key));
+        // SFW packs first, 18+/21+ last (Kyle's explicit ordering).
+        Assert.Equal(
+            new[] { "family", "deep", "office", "trivia", "adult", "drinking" },
+            PromptPacks.All.Select(p => p.Key));
         Assert.Equal(60, PromptPacks.Family.Prompts.Length);
+        Assert.Equal(40, PromptPacks.Deep.Prompts.Length);
+        Assert.Equal(40, PromptPacks.Office.Prompts.Length);
         Assert.Equal(40, PromptPacks.Adult.Prompts.Length);
         Assert.Equal(40, PromptPacks.Drinking.Prompts.Length);
         Assert.Equal(40, PromptPacks.Trivia.Prompts.Length);
         // The drinking pack description carries the standing responsible-drinking line.
         Assert.Contains("drink responsibly", PromptPacks.Drinking.Description);
+    }
+
+    [Fact]
+    public void EveryPack_PromptsAreNonEmptyAndUnique()
+    {
+        foreach (var pack in PromptPacks.All)
+        {
+            Assert.NotEmpty(pack.Prompts);
+            Assert.All(pack.Prompts, p => Assert.False(string.IsNullOrWhiteSpace(p)));
+            Assert.Equal(pack.Prompts.Length, pack.Prompts.Distinct().Count());
+        }
+    }
+
+    // deep/office carry no pack-specific AI nudge — they fall through PackGuidance's
+    // default case, so the system prompt gets neither the trivia nor the crude line.
+    [Theory]
+    [InlineData("deep")]
+    [InlineData("office")]
+    public void SystemPrompt_NoExtraLine_ForDeepAndOffice(string key)
+    {
+        var prompt = GeminiBrain.BuildSystemPrompt(Ctx(key));
+        Assert.DoesNotContain("THIS GAME IS TRIVIA", prompt);
+        Assert.DoesNotContain("THIS GAME LEANS CRUDE", prompt);
+        Assert.Contains("HOW TO NOT GET CAUGHT", prompt);
     }
 
     [Fact]
