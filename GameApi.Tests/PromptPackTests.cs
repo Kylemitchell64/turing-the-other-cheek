@@ -155,15 +155,15 @@ public class PromptPackTests : IClassFixture<TestAppFactory>
         await WaitFor(() => hostState!.Players.Count == 2, "guest never joined");
 
         // Guest (not host) tries to change options → HubException.
-        var ex = await Assert.ThrowsAsync<HubException>(() => guest.InvokeAsync("SetLobbyOptions", "trivia", "normal", "standard"));
+        var ex = await Assert.ThrowsAsync<HubException>(() => guest.InvokeAsync("SetLobbyOptions", "trivia", "normal", "standard", "classic"));
         Assert.Contains("host", ex.Message);
 
         // Bad keys from the host are also rejected, each with its own message.
-        var badEx = await Assert.ThrowsAsync<HubException>(() => host.InvokeAsync("SetLobbyOptions", "nope", "normal", "standard"));
+        var badEx = await Assert.ThrowsAsync<HubException>(() => host.InvokeAsync("SetLobbyOptions", "nope", "normal", "standard", "classic"));
         Assert.Contains("Unknown pack", badEx.Message);
-        var badDiff = await Assert.ThrowsAsync<HubException>(() => host.InvokeAsync("SetLobbyOptions", "trivia", "impossible", "standard"));
+        var badDiff = await Assert.ThrowsAsync<HubException>(() => host.InvokeAsync("SetLobbyOptions", "trivia", "impossible", "standard", "classic"));
         Assert.Contains("Unknown difficulty", badDiff.Message);
-        var badPace = await Assert.ThrowsAsync<HubException>(() => host.InvokeAsync("SetLobbyOptions", "trivia", "normal", "warp"));
+        var badPace = await Assert.ThrowsAsync<HubException>(() => host.InvokeAsync("SetLobbyOptions", "trivia", "normal", "warp", "classic"));
         Assert.Contains("Unknown pace", badPace.Message);
     }
 
@@ -190,7 +190,7 @@ public class PromptPackTests : IClassFixture<TestAppFactory>
             host.On<LobbyState>("LobbyUpdated", s => hostState = s);
             foreach (var c in conns)
             {
-                c.On<string, string, string, string?>("LobbyOptionsChanged", (p, _d, _pc, _cu) => seenPack = p);
+                c.On<string, string, string, string?, string>("LobbyOptionsChanged", (p, _d, _pc, _cu, _m) => seenPack = p);
                 c.On<string, int, DateTime>("PromptStarted", (prompt, _, _2) => firstPrompt ??= prompt);
             }
 
@@ -204,7 +204,7 @@ public class PromptPackTests : IClassFixture<TestAppFactory>
             await WaitFor(() => hostState!.Players.Count == 3, "not all 3 joined");
 
             // Host selects TRIVIA — everyone should see LobbyOptionsChanged.
-            await host.InvokeAsync("SetLobbyOptions", "trivia", "normal", "standard");
+            await host.InvokeAsync("SetLobbyOptions", "trivia", "normal", "standard", "classic");
             await WaitFor(() => seenPack == "trivia", "LobbyOptionsChanged not broadcast");
 
             await host.InvokeAsync("StartGame");

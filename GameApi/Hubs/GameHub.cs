@@ -293,21 +293,32 @@ public class GameHub : Hub
                 if (cheatCards.ContainsKey(p.UserId))
                     p.TokensRemaining = 4;
 
-            // Fresh AI name each game (including rematches), colliding with no real player.
-            var aiName = _store.PickAiName(lobby.Players.Select(p => p.DisplayName));
-            lobby.AiDisplayName = aiName;
-
-            // Build roster: humans + AI, then shuffle so the AI isn't last. Every seat
-            // carries a character — a human's saved config, else their name-hash default;
-            // the AI gets the same name-hash default of its fake name, so it's
-            // indistinguishable even when everyone else has fully customized.
             var entries = lobby.Players
                 .Select(p => new RosterEntryDto(
                     p.DisplayName, p.TokensRemaining, CharacterDefaults.Resolve(p.CharacterJson, p.DisplayName)))
                 .ToList();
-            entries.Add(new RosterEntryDto(aiName, 3, CharacterDefaults.FromName(aiName)));
 
-            roster = ShuffleAiNotLast(entries, aiName);
+            if (GameModes.IsReverse(lobby.Mode))
+            {
+                // Reverse mode (phase 22): no impostor to hide, so the roster is just the
+                // humans — no AI seat, no need to keep it out of the last slot.
+                lobby.AiDisplayName = null;
+                Shuffle(entries);
+                roster = entries;
+            }
+            else
+            {
+                // Fresh AI name each game (including rematches), colliding with no real player.
+                var aiName = _store.PickAiName(lobby.Players.Select(p => p.DisplayName));
+                lobby.AiDisplayName = aiName;
+
+                // Build roster: humans + AI, then shuffle so the AI isn't last. Every seat
+                // carries a character — a human's saved config, else their name-hash default;
+                // the AI gets the same name-hash default of its fake name, so it's
+                // indistinguishable even when everyone else has fully customized.
+                entries.Add(new RosterEntryDto(aiName, 3, CharacterDefaults.FromName(aiName)));
+                roster = ShuffleAiNotLast(entries, aiName);
+            }
 
             // Engine drives the round loop from here; it sets state to Prompting and
             // queues the first PromptStarted into outbound.
@@ -779,6 +790,16 @@ public class GameHub : Hub
             }
         }
         return null;
+    }
+
+    // Plain Fisher-Yates shuffle (reverse mode has no AI seat to keep out of last).
+    private static void Shuffle<T>(IList<T> list)
+    {
+        for (var i = list.Count - 1; i > 0; i--)
+        {
+            var j = System.Security.Cryptography.RandomNumberGenerator.GetInt32(i + 1);
+            (list[i], list[j]) = (list[j], list[i]);
+        }
     }
 
     // Shuffle, but guarantee the AI never lands in the last slot.

@@ -136,7 +136,7 @@ public class PackApiTests : IClassFixture<PackApiTests.PackFactory>
         string? seenCustom = null;
         string? firstPrompt = null;
         hostConn.On<LobbyState>("LobbyUpdated", s => hostState = s);
-        hostConn.On<string, string, string, string?>("LobbyOptionsChanged", (pack, _, _, custom) => { seenPack = pack; seenCustom = custom; });
+        hostConn.On<string, string, string, string?, string>("LobbyOptionsChanged", (pack, _, _, custom, _) => { seenPack = pack; seenCustom = custom; });
         hostConn.On<string, int, DateTime>("PromptStarted", (p, _, _2) => firstPrompt ??= p);
 
         await hostConn.StartAsync();
@@ -197,7 +197,7 @@ public class PackApiTests : IClassFixture<PackApiTests.PackFactory>
         }, "crew custom pack never persisted");
 
         // And picking a normal pack afterwards clears the saved code.
-        await conn.InvokeAsync("SetLobbyOptions", "trivia", "normal", "standard");
+        await conn.InvokeAsync("SetLobbyOptions", "trivia", "normal", "standard", "classic");
         await WaitForDb(db =>
         {
             var row = db.Crews.FirstOrDefault(c => c.Id == crew.Id);

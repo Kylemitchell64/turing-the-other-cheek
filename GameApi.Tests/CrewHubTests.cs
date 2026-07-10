@@ -59,7 +59,7 @@ public class CrewHubTests : IClassFixture<TestAppFactory>
         await conn.InvokeAsync("CreateCrewLobby", crew.Id);
         await WaitFor(() => state != null, "no crew lobby");
 
-        await conn.InvokeAsync("SetLobbyOptions", "trivia", "hard", "flash");
+        await conn.InvokeAsync("SetLobbyOptions", "trivia", "hard", "flash", "classic");
 
         // Persist-back is fire-and-forget — poll GET mine until the crew row reflects it.
         CrewDto? updated = null;

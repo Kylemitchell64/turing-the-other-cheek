@@ -36,7 +36,21 @@ export default defineConfig({
     video: 'retain-on-failure',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+      testIgnore: /mobile-.*\.spec\.js/,
+    },
+    // Phone-viewport visual sweep (phase 24). 360x740 is the narrowest mainstream
+    // Android width — if a screen fits here it fits basically every phone.
+    {
+      name: 'mobile',
+      use: {
+        ...devices['Pixel 5'],
+        viewport: { width: 360, height: 740 },
+      },
+      testMatch: /mobile-.*\.spec\.js/,
+    },
   ],
   // Playwright boots both servers, waits for each URL to answer, then runs the tests.
   // The API runs on the Development-only in-memory DB (no Postgres) with the Mock brain
