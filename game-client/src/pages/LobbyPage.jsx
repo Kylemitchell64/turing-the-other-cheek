@@ -4,9 +4,25 @@ import { useAuth } from "../auth/AuthContext";
 import { useLobby } from "../game/LobbyContext";
 import { PACKS, packFor } from "../game/packs";
 
+// Impostor difficulty + answer pace options. Keys must match the server's
+// DifficultyProfile / PaceOptions keys exactly.
+const DIFFICULTIES = [
+  { key: "easy", label: "EASY", blurb: "training wheels. the bot answers like a polite houseguest and always takes about the same time. spot the tells." },
+  { key: "normal", label: "NORMAL", blurb: "fair fight. it mimics the group but leaves seams if you pay attention." },
+  { key: "hard", label: "HARD", blurb: "good luck. full mimicry, fake typos, human timing. it knows how you type." },
+];
+
+const PACES = [
+  { key: "flash", label: "FLASH 10s", blurb: "blink and its over. short answers only." },
+  { key: "quick", label: "QUICK 20s", blurb: "keep it moving." },
+  { key: "standard", label: "STD 30s", blurb: "the classic." },
+  { key: "relaxed", label: "RELAXED 45s", blurb: "room to think." },
+  { key: "snail", label: "SNAIL 60s", blurb: "a full minute per question. for the overthinkers." },
+];
+
 export default function LobbyPage() {
   const { user } = useAuth();
-  const { lobby, roster, packKey, setLobbyOptions, startGame, leaveLobby } = useLobby();
+  const { lobby, roster, packKey, difficulty, paceKey, setLobbyOptions, startGame, leaveLobby } = useLobby();
   const navigate = useNavigate();
 
   const [busy, setBusy] = useState(false);
@@ -35,9 +51,27 @@ export default function LobbyPage() {
   const onPickPack = async (key) => {
     if (key === packKey) return;
     try {
-      await setLobbyOptions(key);
+      await setLobbyOptions({ pack: key });
     } catch (e) {
       setErr(e.message || "Couldn't change the pack");
+    }
+  };
+
+  const onPickDifficulty = async (key) => {
+    if (key === difficulty) return;
+    try {
+      await setLobbyOptions({ diff: key });
+    } catch (e) {
+      setErr(e.message || "Couldn't change the difficulty");
+    }
+  };
+
+  const onPickPace = async (key) => {
+    if (key === paceKey) return;
+    try {
+      await setLobbyOptions({ pace: key });
+    } catch (e) {
+      setErr(e.message || "Couldn't change the pace");
     }
   };
 
@@ -117,7 +151,41 @@ export default function LobbyPage() {
           </div>
           <p className="pack-desc">{activePack.description}</p>
           {activePack.ageNote && <p className="pack-age">{activePack.ageNote}</p>}
-          {!amHost && <p className="soon">// the host picks the pack</p>}
+        </div>
+
+        <div className="pack-picker">
+          <p className="pack-heading">// ai difficulty</p>
+          <div className="segmented">
+            {DIFFICULTIES.map((d) => {
+              const selected = d.key === difficulty;
+              const cls = ["seg", selected ? "on" : "", amHost ? "" : "locked"].join(" ").trim();
+              return (
+                <button key={d.key} className={cls} onClick={() => amHost && onPickDifficulty(d.key)}
+                  disabled={!amHost} aria-pressed={selected}>
+                  {d.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="pack-desc">{DIFFICULTIES.find((d) => d.key === difficulty)?.blurb}</p>
+        </div>
+
+        <div className="pack-picker">
+          <p className="pack-heading">// answer pace</p>
+          <div className="segmented">
+            {PACES.map((p) => {
+              const selected = p.key === paceKey;
+              const cls = ["seg", selected ? "on" : "", amHost ? "" : "locked"].join(" ").trim();
+              return (
+                <button key={p.key} className={cls} onClick={() => amHost && onPickPace(p.key)}
+                  disabled={!amHost} aria-pressed={selected}>
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="pack-desc">{PACES.find((p) => p.key === paceKey)?.blurb}</p>
+          {!amHost && <p className="soon">// the host picks the options</p>}
         </div>
 
         {err && <div className="error">{err}</div>}

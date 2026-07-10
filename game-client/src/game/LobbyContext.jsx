@@ -31,9 +31,11 @@ export function LobbyProvider({ children }) {
   const [ended, setEnded] = useState(null); // { winType, winnerName, aiRealIdentityName, fullTranscript[] }
   const [events, setEvents] = useState([]); // a simple scrolling event log for manual testing
 
-  // Selected prompt pack for this lobby (host picks it pre-start). Seeded from
+  // Host-picked lobby options (pack / impostor difficulty / answer pace). Seeded from
   // LobbyUpdated for late joiners, kept live via LobbyOptionsChanged.
   const [packKey, setPackKey] = useState(DEFAULT_PACK);
+  const [difficulty, setDifficulty] = useState("normal");
+  const [paceKey, setPaceKey] = useState("standard");
 
   // Who's currently shown as "typing" this round, keyed by display name. Driven by the
   // server's PlayerTyping(name, isTyping) — humans (via SetTyping) AND the AI's faked
@@ -75,13 +77,17 @@ export function LobbyProvider({ children }) {
 
       conn.on("LobbyUpdated", (state) => {
         setLobby(state);
-        // Sync the pack for anyone who joined after the host already picked one.
+        // Sync the options for anyone who joined after the host already picked them.
         if (state?.packKey) setPackKey(state.packKey);
+        if (state?.difficulty) setDifficulty(state.difficulty);
+        if (state?.paceKey) setPaceKey(state.paceKey);
       });
 
-      conn.on("LobbyOptionsChanged", (pack) => {
+      conn.on("LobbyOptionsChanged", (pack, diff, pace) => {
         setPackKey(pack);
-        log(`pack set to ${pack}`);
+        setDifficulty(diff);
+        setPaceKey(pace);
+        log(`options set to ${pack} / ${diff} / ${pace}`);
       });
 
       conn.on("GameStarted", (r) => {
@@ -222,13 +228,19 @@ export function LobbyProvider({ children }) {
     await conn.invoke("StartGame");
   }, [ensureConnected]);
 
-  // Host picks the prompt pack pre-start. Optimistically update locally; the server
-  // echoes LobbyOptionsChanged to everyone (including us).
-  const setLobbyOptions = useCallback(async (pack) => {
-    setPackKey(pack);
+  // Host picks the lobby options pre-start (pack / difficulty / pace). Any omitted
+  // arg keeps its current value. Optimistically update locally; the server echoes
+  // LobbyOptionsChanged to everyone (including us).
+  const setLobbyOptions = useCallback(async ({ pack, diff, pace } = {}) => {
+    const p = pack ?? packKey;
+    const d = diff ?? difficulty;
+    const pc = pace ?? paceKey;
+    setPackKey(p);
+    setDifficulty(d);
+    setPaceKey(pc);
     const conn = await ensureConnected();
-    await conn.invoke("SetLobbyOptions", pack);
-  }, [ensureConnected]);
+    await conn.invoke("SetLobbyOptions", p, d, pc);
+  }, [ensureConnected, packKey, difficulty, paceKey]);
 
   const submitAnswer = useCallback(async (text) => {
     const conn = await ensureConnected();
@@ -278,6 +290,8 @@ export function LobbyProvider({ children }) {
     setTyping({});
     typingSentRef.current = false;
     setPackKey(DEFAULT_PACK);
+    setDifficulty("normal");
+    setPaceKey("standard");
     if (connRef.current) {
       try { await connRef.current.stop(); } catch { /* ignore */ }
       connRef.current = null;
@@ -289,7 +303,7 @@ export function LobbyProvider({ children }) {
     status, lobby, roster, error, setError,
     round, phase, reveal, accusation, accusationMade,
     vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, events,
-    tokens, clockSkew, history, packKey, typing,
+    tokens, clockSkew, history, packKey, difficulty, paceKey, typing,
     createLobby, joinLobby, startGame, setLobbyOptions, leaveLobby,
     submitAnswer, makeAccusation, useFakeOut, setTypingState,
   };
