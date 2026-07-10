@@ -159,28 +159,37 @@ public class GameHub : Hub
             await send();
     }
 
-    // Host-only, pre-start only: pick the prompt pack for this lobby. Broadcasts
-    // LobbyOptionsChanged so every client updates its selector live. The payload is
-    // just the pack key — host-driven, nothing about it hints at the AI.
-    public async Task SetLobbyOptions(string packKey)
+    // Host-only, pre-start only: pick the prompt pack, impostor difficulty, and answer
+    // pace for this lobby. Broadcasts LobbyOptionsChanged so every client updates its
+    // selectors live. All three keys are host-driven — nothing about them hints at the AI.
+    public async Task SetLobbyOptions(string packKey, string difficulty, string paceKey)
     {
         var lobby = FindLobbyForCaller() ?? throw new HubException("You're not in a lobby");
         packKey = (packKey ?? "").Trim();
+        difficulty = (difficulty ?? "").Trim();
+        paceKey = (paceKey ?? "").Trim();
 
         lock (lobby.Sync)
         {
             if (lobby.HostUserId != UserId)
-                throw new HubException("Only the host can change the pack");
+                throw new HubException("Only the host can change lobby options");
             if (lobby.State != GameState.Lobby)
-                throw new HubException("Can't change the pack once the game has started");
+                throw new HubException("Can't change options once the game has started");
             if (!PromptPacks.IsValidKey(packKey))
                 throw new HubException("Unknown pack");
+            if (!DifficultyProfile.IsValidKey(difficulty))
+                throw new HubException("Unknown difficulty");
+            if (!PaceOptions.IsValidKey(paceKey))
+                throw new HubException("Unknown pace");
 
             lobby.PackKey = packKey;
+            lobby.Difficulty = difficulty;
+            lobby.PaceKey = paceKey;
         }
 
-        _logger.LogInformation("Lobby {Code} pack set to {Pack}", lobby.Code, packKey);
-        await Clients.Group(lobby.Code).SendAsync("LobbyOptionsChanged", packKey);
+        _logger.LogInformation("Lobby {Code} options set to {Pack}/{Difficulty}/{Pace}",
+            lobby.Code, packKey, difficulty, paceKey);
+        await Clients.Group(lobby.Code).SendAsync("LobbyOptionsChanged", packKey, difficulty, paceKey);
     }
 
     // Submit this player's answer for the current round. 280-char cap, one per
@@ -398,7 +407,8 @@ public class GameHub : Hub
                     p.DisplayName, p.TokensRemaining, p.IsConnected, p.UserId == lobby.HostUserId,
                     CharacterDefaults.Resolve(p.CharacterJson, p.DisplayName)))
                 .ToList();
-            dto = new LobbyStateDto(lobby.Code, lobby.State.ToString(), players, lobby.PackKey);
+            dto = new LobbyStateDto(lobby.Code, lobby.State.ToString(), players,
+                lobby.PackKey, lobby.Difficulty, lobby.PaceKey);
         }
         await Clients.Group(lobby.Code).SendAsync("LobbyUpdated", dto);
     }

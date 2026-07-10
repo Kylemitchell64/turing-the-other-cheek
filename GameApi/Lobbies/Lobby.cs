@@ -26,6 +26,12 @@ public class Lobby
     // defaults to family. Kept across a rematch (only the used-prompt set resets).
     public string PackKey { get; set; } = PromptPacks.DefaultKey;
 
+    // How sneaky the impostor plays (easy|normal|hard) and how long everyone gets to
+    // answer (flash|quick|standard|relaxed|snail). Host-picked with the pack, kept
+    // across a rematch like PackKey (ResetForNewGame doesn't touch them).
+    public string Difficulty { get; set; } = DifficultyProfile.DefaultKey;
+    public string PaceKey { get; set; } = PaceOptions.DefaultKey;
+
     // Prompt indices already used this game, so a pack's prompts never repeat within
     // one game (cleared on a fresh game / rematch, and when a pack is exhausted).
     public HashSet<int> UsedPromptIndices { get; } = new();

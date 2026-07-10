@@ -23,12 +23,17 @@ public static class AnswerPostProcessor
 
     // Run the full pipeline. `reroll` is invoked at most once (step 3) with the
     // appended redo instruction; if it's null we skip straight to the strip fallback.
+    // conformToGroup gates steps 4-5 and injectTypos gates step 6 — easy/normal
+    // difficulty turn parts of the disguise off on purpose (perfect punctuation and
+    // zero typos are intended tells there).
     public static async Task<string> ProcessAsync(
         string raw,
         GroupStats stats,
         Random rng,
         Func<string, CancellationToken, Task<string>>? reroll,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool conformToGroup = true,
+        bool injectTypos = true)
     {
         // 1. Strip wrapping quotes/backticks; first line only if multiline.
         var text = Step1StripAndFirstLine(raw);
@@ -58,13 +63,16 @@ public static class AnswerPostProcessor
         }
 
         // 4. Case conformance.
-        text = Step4Case(text, stats.LowercaseStartRate, rng);
+        if (conformToGroup)
+            text = Step4Case(text, stats.LowercaseStartRate, rng);
 
         // 5. Trailing period.
-        text = Step5TrailingPeriod(text, stats.TrailingPeriodRate, rng);
+        if (conformToGroup)
+            text = Step5TrailingPeriod(text, stats.TrailingPeriodRate, rng);
 
         // 6. Typo injection.
-        text = Step6Typo(text, stats.MeanTypoRate, rng);
+        if (injectTypos)
+            text = Step6Typo(text, stats.MeanTypoRate, rng);
 
         // 7. Length floor — caller handles empty by substituting a fallback.
         return text;

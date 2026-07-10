@@ -14,9 +14,11 @@ public record LobbyPlayerDto(
     string DisplayName, int TokensRemaining, bool IsConnected, bool IsHost, CharacterConfig Character);
 
 // Full LobbyUpdated payload — includes the join code and who the host is by name
-// so the client can show the host-only Start button. PackKey lets a late joiner see
-// the currently selected prompt pack (host-driven, reveals nothing about the AI).
-public record LobbyStateDto(string Code, string State, List<LobbyPlayerDto> Players, string PackKey);
+// so the client can show the host-only Start button. PackKey/Difficulty/PaceKey let
+// a late joiner see the current options (all host-driven, reveal nothing about the AI).
+public record LobbyStateDto(
+    string Code, string State, List<LobbyPlayerDto> Players,
+    string PackKey, string Difficulty, string PaceKey);
 
 // One entry in GameStarted(roster[]). Humans + the AI, indistinguishable.
 // Deliberately NO user id, NO isAi, NO isHost — just name + tokens + character.

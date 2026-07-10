@@ -161,7 +161,7 @@ public class GameEngine : BackgroundService
         lobby.AccusedName = null;
         lobby.VetoEligible.Clear();
         lobby.InPriorityWindow = false;
-        lobby.PhaseDeadlineUtc = DateTime.UtcNow + _timings.Prompt;
+        lobby.PhaseDeadlineUtc = DateTime.UtcNow + PromptWindow(lobby);
 
         var code = lobby.Code;
         var prompt = lobby.CurrentPrompt;
@@ -170,6 +170,13 @@ public class GameEngine : BackgroundService
 
         outbound.Add(() => _hub.Clients.Group(code).SendAsync("PromptStarted", prompt, round, deadline));
     }
+
+    // The answer window for this lobby: the host's pace pick, except "standard" which
+    // defers to configured GameTimings so the compressed test timings keep working.
+    private TimeSpan PromptWindow(Lobby lobby) =>
+        lobby.PaceKey == PaceOptions.DefaultKey
+            ? _timings.Prompt
+            : TimeSpan.FromSeconds(PaceOptions.WindowSeconds(lobby.PaceKey));
 
     // Fire the AI's answer task once per round, in the background. The brain returns
     // a delay; when it elapses we write the answer under the lobby lock.
@@ -209,7 +216,9 @@ public class GameEngine : BackgroundService
             TimingState: lobby.TimingState,
             FallbackState: lobby.FallbackState,
             TimeRemaining: remaining,
-            PackKey: lobby.PackKey);
+            PackKey: lobby.PackKey,
+            Difficulty: lobby.Difficulty,
+            WindowSeconds: PromptWindow(lobby).TotalSeconds);
 
         _ = Task.Run(async () =>
         {

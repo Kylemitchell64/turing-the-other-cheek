@@ -136,7 +136,7 @@ public class UsernameClaimTests : IClassFixture<TestAppFactory>
 
     // Seeds a brand-new external account (IsGuest=false, NeedsUsername=true) and returns
     // an authed client for it (token minted the same way the OAuth callback would).
-    private async Task<(HttpClient client, string userId)> PendingOAuthClientAsync()
+    private Task<(HttpClient client, string userId)> PendingOAuthClientAsync()
     {
         var id = "oauth_" + Guid.NewGuid().ToString("N");
         var placeholder = ("ext" + Guid.NewGuid().ToString("N"))[..16];
@@ -159,7 +159,7 @@ public class UsernameClaimTests : IClassFixture<TestAppFactory>
 
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        return (client, id);
+        return Task.FromResult((client, id));
     }
 
     private static string FreshName() => "u" + Guid.NewGuid().ToString("N")[..12];

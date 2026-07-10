@@ -35,8 +35,12 @@ public class MockBrain : IAiBrain
     public Task<AiAnswer> AnswerAsync(AiTurnContext context, CancellationToken ct)
     {
         var text = CannedAnswers[RandomNumberGenerator.GetInt32(CannedAnswers.Length)];
+        var profile = DifficultyProfile.Get(context.Difficulty);
         var delay = AnswerTiming.ComputeDelay(
-            text.Length, context.TimeRemaining, context.TimingState, Random.Shared);
+            text.Length, context.TimeRemaining, context.TimingState, Random.Shared,
+            windowSeconds: context.WindowSeconds,
+            allowDeadlineScrape: profile.AllowDeadlineScrape,
+            fixedBand: profile.FixedTimingBand);
         return Task.FromResult(new AiAnswer(text, delay));
     }
 }

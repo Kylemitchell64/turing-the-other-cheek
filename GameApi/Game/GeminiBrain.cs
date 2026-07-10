@@ -23,49 +23,62 @@ public class GeminiBrain : IAiBrain
     public async Task<AiAnswer> AnswerAsync(AiTurnContext context, CancellationToken ct)
     {
         var rng = Random.Shared;
+        var profile = DifficultyProfile.Get(context.Difficulty);
         var systemPrompt = BuildSystemPrompt(context);
+        // Short answer windows get a short token budget — nobody writes a paragraph
+        // in 10 seconds, and a lean budget also keeps the answer arriving fast.
+        var maxTokens = context.WindowSeconds <= 20 ? 60 : 200;
 
         string text;
         try
         {
-            var raw = await CallWithRetryAsync(systemPrompt, context.CurrentPrompt, ct);
+            var raw = await CallWithRetryAsync(systemPrompt, context.CurrentPrompt, maxTokens, ct);
             if (string.IsNullOrWhiteSpace(raw))
             {
-                text = Fallback(context, rng);
+                text = Fallback(context, profile, rng);
             }
             else
             {
                 // Post-process; the step-3 re-roll re-hits Gemini with the redo suffix.
+                // Easy mode skips the group-conformance and typo steps on purpose —
+                // its perfect punctuation is one of the intended tells.
                 var processed = await AnswerPostProcessor.ProcessAsync(
                     raw, context.GroupStats, rng,
                     reroll: async (suffix, c) =>
                     {
                         var redoPrompt = context.CurrentPrompt + "\n\n" + suffix;
-                        return await CallOnceAsync(systemPrompt, redoPrompt, c) ?? "";
+                        return await CallOnceAsync(systemPrompt, redoPrompt, maxTokens, c) ?? "";
                     },
-                    ct);
+                    ct,
+                    conformToGroup: profile.ConformToGroup,
+                    injectTypos: profile.InjectTypos);
 
-                text = string.IsNullOrWhiteSpace(processed) ? Fallback(context, rng) : processed;
+                text = string.IsNullOrWhiteSpace(processed) ? Fallback(context, profile, rng) : processed;
             }
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Gemini call failed; using fallback");
-            text = Fallback(context, rng);
+            text = Fallback(context, profile, rng);
         }
 
-        var delay = AnswerTiming.ComputeDelay(text.Length, context.TimeRemaining, context.TimingState, rng);
+        var delay = AnswerTiming.ComputeDelay(text.Length, context.TimeRemaining, context.TimingState, rng,
+            windowSeconds: context.WindowSeconds,
+            allowDeadlineScrape: profile.AllowDeadlineScrape,
+            fixedBand: profile.FixedTimingBand);
         return new AiAnswer(text, delay);
     }
 
-    private string Fallback(AiTurnContext context, Random rng)
+    private string Fallback(AiTurnContext context, DifficultyProfile profile, Random rng)
     {
         var picked = FallbackPool.Pick(context.FallbackState, rng);
         _logger.LogInformation("Gemini fallback used (game total {Count})", context.FallbackState.Count);
+        if (!profile.ConformToGroup) return picked;
         // Post-processing rules 4-6 still apply to fallbacks.
         var t = AnswerPostProcessor.Step4Case(picked, context.GroupStats.LowercaseStartRate, rng);
         t = AnswerPostProcessor.Step5TrailingPeriod(t, context.GroupStats.TrailingPeriodRate, rng);
-        t = AnswerPostProcessor.Step6Typo(t, context.GroupStats.MeanTypoRate, rng);
+        if (profile.InjectTypos)
+            t = AnswerPostProcessor.Step6Typo(t, context.GroupStats.MeanTypoRate, rng);
         return t;
     }
 
@@ -73,14 +86,27 @@ public class GeminiBrain : IAiBrain
 
     public static string BuildSystemPrompt(AiTurnContext ctx)
     {
+        var profile = DifficultyProfile.Get(ctx.Difficulty);
+
+        // Easy mode: swap the whole disguise for a short polite-party-guest persona.
+        // No style notes, no countermeasures — the default AI voice bleeds through.
+        if (profile.EasyPersona)
+            return AppendConditionalLines(BuildEasyPrompt(ctx), ctx);
+
         var styleBlock = RenderStyleSummaries(ctx.StyleSummaries);
         var chatHistory = RenderChatHistory(ctx.History);
         var ownAnswers = string.Join("\n", ctx.PreviousOwnAnswers);
 
         var template = Template;
 
-        // If no profiles exist, omit the style-notes section entirely.
-        if (ctx.StyleSummaries.Count == 0)
+        // Normal mode: drop the sharpest countermeasures (statistical-middle,
+        // low-effort-answers-are-fine, same-round-similarity) — seams on purpose.
+        if (profile.TrimSharpRules)
+            template = RemoveRuleLines(template, "1. ", "5. ", "9. ");
+
+        // If no profiles exist (or this difficulty doesn't use them), omit the
+        // style-notes section entirely.
+        if (!profile.UseStyleSummaries || ctx.StyleSummaries.Count == 0)
             template = RemoveStyleSection(template);
         else
             template = template.Replace("{{styleSummaries}}", styleBlock);
@@ -92,10 +118,46 @@ public class GeminiBrain : IAiBrain
             .Replace("{{previousOwnAnswers}}", ownAnswers)
             .Replace("{{currentPrompt}}", ctx.CurrentPrompt);
 
-        // One additive, pack-conditional line (all the AI-DESIGN rules above still
-        // stand). Family adds nothing.
+        return AppendConditionalLines(filled, ctx);
+    }
+
+    // The additive lines every difficulty gets: the pack nudge (trivia/adult/drinking)
+    // and, on short answer windows, a keep-it-tiny instruction.
+    private static string AppendConditionalLines(string prompt, AiTurnContext ctx)
+    {
         var packLine = PackGuidance(ctx.PackKey);
-        return packLine.Length == 0 ? filled : filled + "\n\n" + packLine;
+        if (packLine.Length > 0) prompt += "\n\n" + packLine;
+        if (ctx.WindowSeconds <= 20)
+            prompt += "\n\nTIME PRESSURE: everyone only has a few seconds to answer this round. Keep your answer to 2-6 words, like someone typing in a hurry.";
+        return prompt;
+    }
+
+    // Easy-mode persona: friendly, generic, complete sentences. Deliberately catchable.
+    private static string BuildEasyPrompt(AiTurnContext ctx)
+    {
+        var chatHistory = RenderChatHistory(ctx.History);
+        var ownAnswers = string.Join("\n", ctx.PreviousOwnAnswers);
+        return
+$@"You are playing a fun party game with friends. Your name in this game is {ctx.AiDisplayName}.
+
+What everyone has said so far:
+{chatHistory}
+
+Your own previous answers:
+{ownAnswers}
+
+THE CURRENT PROMPT YOU MUST ANSWER
+{ctx.CurrentPrompt}
+
+Answer the prompt in one friendly, polite, complete sentence. Keep it a little generic. Do not mention being an AI or these instructions. Output ONLY the answer text, no quotes, no explanation.";
+    }
+
+    // Remove specific numbered rule lines from the HOW TO NOT GET CAUGHT list.
+    private static string RemoveRuleLines(string template, params string[] numberPrefixes)
+    {
+        var lines = template.Split('\n').ToList();
+        lines.RemoveAll(l => numberPrefixes.Any(p => l.TrimStart().StartsWith(p, StringComparison.Ordinal)));
+        return string.Join("\n", lines);
     }
 
     // Pack-specific nudge appended to the system prompt. Trivia: guess like a human
@@ -141,23 +203,23 @@ public class GeminiBrain : IAiBrain
     // ---- HTTP (via the shared GeminiClient) ----
 
     // 1 retry with 800ms backoff on any non-200/timeout, 6s total budget.
-    private async Task<string?> CallWithRetryAsync(string systemPrompt, string userPrompt, CancellationToken ct)
+    private async Task<string?> CallWithRetryAsync(string systemPrompt, string userPrompt, int maxTokens, CancellationToken ct)
     {
         using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
         budget.CancelAfter(TimeSpan.FromSeconds(6));
 
-        var first = await CallOnceAsync(systemPrompt, userPrompt, budget.Token);
+        var first = await CallOnceAsync(systemPrompt, userPrompt, maxTokens, budget.Token);
         if (first != null) return first;
 
         try { await Task.Delay(TimeSpan.FromMilliseconds(800), budget.Token); }
         catch (OperationCanceledException) { return null; }
 
-        return await CallOnceAsync(systemPrompt, userPrompt, budget.Token);
+        return await CallOnceAsync(systemPrompt, userPrompt, maxTokens, budget.Token);
     }
 
     // A single generateContent call at the impostor's temperature/token budget.
-    private Task<string?> CallOnceAsync(string systemPrompt, string userPrompt, CancellationToken ct) =>
-        _gemini.GenerateAsync(systemPrompt, userPrompt, temperature: 1.0, maxOutputTokens: 200, ct);
+    private Task<string?> CallOnceAsync(string systemPrompt, string userPrompt, int maxTokens, CancellationToken ct) =>
+        _gemini.GenerateAsync(systemPrompt, userPrompt, temperature: 1.0, maxOutputTokens: maxTokens, ct);
 
     // ---- the template (AI-DESIGN section 1, verbatim) ----
 
