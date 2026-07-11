@@ -271,7 +271,170 @@ public class AdminApiTests : IClassFixture<AdminAppFactory>
         Assert.True(await UserExists(adminId), "admin must be spared");
     }
 
+    // Every mutating per-user route also 403s a non-admin (the new profile/delete endpoints).
+    [Fact]
+    public async Task NonAdmin_Gets403_OnUserProfileAndDelete()
+    {
+        var (uid, token) = await SeedUserAsync();
+        var client = AuthedClient(token);
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"/api/admin/users/{uid}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.DeleteAsync($"/api/admin/users/{uid}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await client.PostAsync("/api/admin/users/purge-nonoauth", Json(new { confirm = "DELETE GUESTS" }))).StatusCode);
+    }
+
+    // GET /users/{id} returns the synopsis shape the profile drawer consumes: identity, the
+    // PlayerStats counters, sample count + total chars (never the raw text), and rewards.
+    [Fact]
+    public async Task UserProfile_ReturnsSynopsisShape()
+    {
+        var (_, adminToken) = await SeedAdminAsync();
+        var (uid, _) = await SeedUserAsync();
+        await SeedSampleAsync(uid, "this is how i actually type, promise");
+        var admin = AuthedClient(adminToken);
+
+        (await admin.PostAsync($"/api/admin/users/{uid}/rewards", Json(new { kind = "outfit:17" })))
+            .EnsureSuccessStatusCode();
+
+        using var doc = await GetJson(admin, $"/api/admin/users/{uid}");
+        var p = doc.RootElement;
+        Assert.Equal(uid, p.GetProperty("id").GetString());
+        Assert.False(string.IsNullOrEmpty(p.GetProperty("displayName").GetString()));
+        Assert.False(string.IsNullOrEmpty(p.GetProperty("provider").GetString()));
+        Assert.Equal(1, p.GetProperty("sampleCount").GetInt32());
+        Assert.True(p.GetProperty("sampleChars").GetInt32() > 0);
+        Assert.True(p.TryGetProperty("gamesPlayed", out _));
+        Assert.True(p.TryGetProperty("timesReadByAi", out _));
+        Assert.False(p.GetProperty("hasCharacter").GetBoolean());
+        Assert.Equal(JsonValueKind.Array, p.GetProperty("crews").ValueKind);
+        Assert.Contains(17, p.GetProperty("rewards").GetProperty("outfits").EnumerateArray().Select(e => e.GetInt32()));
+        // The raw sample text must NOT be exposed anywhere in the synopsis.
+        Assert.DoesNotContain("promise", doc.RootElement.GetRawText());
+
+        // Missing user → 404.
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync("/api/admin/users/does-not-exist")).StatusCode);
+    }
+
+    // DELETE /users/{id} removes the account AND its data, even past the RESTRICT foreign keys
+    // (a game-participation row and an owned crew) that would otherwise block the delete.
+    [Fact]
+    public async Task DeleteUser_CascadesData_AcrossRestrictFks()
+    {
+        var (_, adminToken) = await SeedAdminAsync();
+        var (uid, _) = await SeedUserAsync();
+        await SeedSampleAsync(uid, "sample text");
+        await SeedStatsAndRewardAsync(uid);
+        await SeedGameParticipationAsync(uid); // RESTRICT #1
+        await SeedOwnedCrewAsync(uid);         // RESTRICT #2
+        var admin = AuthedClient(adminToken);
+
+        var del = await admin.DeleteAsync($"/api/admin/users/{uid}");
+        del.EnsureSuccessStatusCode();
+
+        Assert.False(await UserExists(uid), "account should be gone");
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GameContext>();
+        Assert.False(await db.WritingSamples.AnyAsync(s => s.UserId == uid), "samples cascade");
+        Assert.False(await db.PlayerStats.AnyAsync(s => s.UserId == uid), "stats cascade");
+        Assert.False(await db.UserRewards.AnyAsync(r => r.UserId == uid), "rewards cascade");
+        Assert.False(await db.CrewMembers.AnyAsync(m => m.UserId == uid), "crew memberships cascade");
+        Assert.False(await db.GamePlayers.AnyAsync(g => g.UserId == uid), "participation rows cleared");
+    }
+
+    // An admin account (allowlisted email) is never deletable, even by another admin.
+    [Fact]
+    public async Task DeleteUser_Admin_IsProtected()
+    {
+        var (adminId, adminToken) = await SeedAdminAsync();
+        var admin = AuthedClient(adminToken);
+
+        var del = await admin.DeleteAsync($"/api/admin/users/{adminId}");
+        Assert.Equal(HttpStatusCode.BadRequest, del.StatusCode);
+        Assert.True(await UserExists(adminId), "admin must survive a delete attempt");
+    }
+
+    // Bulk purge deletes every non-oauth account (guests + password) and spares oauth logins,
+    // returning the count. The wrong confirm phrase changes nothing.
+    [Fact]
+    public async Task PurgeNonOauth_DeletesGuestsAndPassword_SparesOAuth()
+    {
+        var (adminId, adminToken) = await SeedAdminAsync();
+        var (guest1, _) = await SeedUserAsync(guest: true);
+        var (guest2, _) = await SeedUserAsync(guest: true);
+        var (pwUser, _) = await SeedUserAsync();      // password account = non-oauth too
+        var admin = AuthedClient(adminToken);
+
+        var wrong = await admin.PostAsync("/api/admin/users/purge-nonoauth", Json(new { confirm = "nope" }));
+        Assert.Equal(HttpStatusCode.BadRequest, wrong.StatusCode);
+        Assert.True(await UserExists(guest1), "wrong phrase must not delete anything");
+
+        var res = await admin.PostAsync("/api/admin/users/purge-nonoauth", Json(new { confirm = "DELETE GUESTS" }));
+        res.EnsureSuccessStatusCode();
+        using var body = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+        Assert.True(body.RootElement.GetProperty("deleted").GetInt32() >= 3);
+
+        Assert.False(await UserExists(guest1), "guest purged");
+        Assert.False(await UserExists(guest2), "guest purged");
+        Assert.False(await UserExists(pwUser), "password account purged");
+        Assert.True(await UserExists(adminId), "oauth admin spared");
+
+        // Deterministic: no non-oauth (empty-provider) accounts remain at all.
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GameContext>();
+        Assert.False(await db.Users.AnyAsync(u => u.ExternalProvider == null || u.ExternalProvider == ""),
+            "no non-oauth accounts should survive the purge");
+    }
+
     // --- seeding + infra ---
+
+    private async Task SeedSampleAsync(string userId, string text)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GameContext>();
+        db.WritingSamples.Add(new WritingSample
+        {
+            UserId = userId, Text = text, Source = SampleSource.Upload, CreatedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private async Task SeedStatsAndRewardAsync(string userId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GameContext>();
+        db.PlayerStats.Add(new PlayerStats { UserId = userId, GamesPlayed = 3, TimesReadByAi = 1 });
+        db.UserRewards.Add(new UserReward { UserId = userId, Kind = "outfit:17", GrantedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+    }
+
+    private async Task SeedGameParticipationAsync(string userId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GameContext>();
+        var game = new Game { JoinCode = Guid.NewGuid().ToString("N")[..5], StartedAt = DateTime.UtcNow };
+        db.Games.Add(game);
+        await db.SaveChangesAsync();
+        db.GamePlayers.Add(new GamePlayer { GameId = game.Id, UserId = userId });
+        await db.SaveChangesAsync();
+    }
+
+    private async Task SeedOwnedCrewAsync(string userId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<GameContext>();
+        var crew = new Crew
+        {
+            Name = "crew_" + Guid.NewGuid().ToString("N")[..6],
+            OwnerUserId = userId,
+            JoinCode = Guid.NewGuid().ToString("N")[..5],
+            CreatedAt = DateTime.UtcNow
+        };
+        db.Crews.Add(crew);
+        await db.SaveChangesAsync();
+        db.CrewMembers.Add(new CrewMember { CrewId = crew.Id, UserId = userId, JoinedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+    }
 
     private async Task<(string id, string token)> SeedAdminAsync()
     {

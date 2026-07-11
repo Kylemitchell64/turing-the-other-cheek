@@ -52,6 +52,9 @@ public class AdminController : ControllerBase
     // The exact phrase the danger-zone wipe requires, typed literally by the operator.
     private const string WipeConfirmPhrase = "WIPE EVERYTHING";
 
+    // The (lighter) typed confirmation guarding the bulk non-oauth purge.
+    private const string PurgeGuestsPhrase = "DELETE GUESTS";
+
     // GET /api/admin/overview — headline stat tiles: account mix, game volume, live lobbies,
     // and one tile per AI provider (request count + circuit-breaker/quota state).
     [HttpGet("overview")]
@@ -265,6 +268,56 @@ public class AdminController : ControllerBase
         return Ok(new { page, pageSize, total, maxDataUsage = (long)maxDataUsage, users = rows });
     }
 
+    // GET /api/admin/users/{id} — the per-user synopsis behind a clicked row. Everything the
+    // operator needs to understand an account at a glance; deliberately NOT the raw sample
+    // TEXT (that's private) — just counts + total characters so the row can say "12 samples,
+    // 3.4k chars" without exposing what someone wrote.
+    [HttpGet("users/{id}")]
+    public async Task<IActionResult> UserProfile(string id)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id);
+        if (user == null) return NotFound(new { error = "no such user" });
+
+        var stats = await _db.PlayerStats.FirstOrDefaultAsync(p => p.UserId == id);
+        var sampleCount = await _db.WritingSamples.CountAsync(s => s.UserId == id);
+        var sampleChars = await _db.WritingSamples.Where(s => s.UserId == id).SumAsync(s => (long?)s.Text.Length) ?? 0;
+        var rewards = await _db.UserRewards.Where(r => r.UserId == id).ToListAsync();
+
+        var crews = await _db.CrewMembers
+            .Where(m => m.UserId == id)
+            .Select(m => new
+            {
+                name = m.Crew!.Name,
+                joinCode = m.Crew.JoinCode,
+                isOwner = m.Crew.OwnerUserId == id,
+                joinedAt = m.JoinedAt
+            })
+            .ToListAsync();
+
+        return Ok(new
+        {
+            id = user.Id,
+            displayName = user.DisplayName ?? user.UserName,
+            username = user.UserName,
+            email = user.Email,
+            tier = TierOf(user.IsGuest, user.ExternalProvider, user.Email),
+            provider = user.IsGuest ? "guest" : (string.IsNullOrEmpty(user.ExternalProvider) ? "password" : user.ExternalProvider),
+            isGuest = user.IsGuest,
+            isAdmin = AdminEmails.IsAdmin(_config, user.Email, user.ExternalProvider),
+            lastSeen = user.LastSeenUtc,
+            gamesPlayed = stats?.GamesPlayed ?? 0,
+            detectorWins = stats?.DetectorWins ?? 0,
+            timesFooled = stats?.TimesFooled ?? 0,
+            timesReadByAi = stats?.TimesReadByAi ?? 0,
+            aiSurvivalGamesWitnessed = stats?.AiSurvivalGamesWitnessed ?? 0,
+            sampleCount,
+            sampleChars,
+            hasCharacter = !string.IsNullOrEmpty(user.CharacterJson),
+            crews,
+            rewards = SummarizeRewards(rewards)
+        });
+    }
+
     // POST /api/admin/users/{id}/rewards  { kind } — grant a cosmetic unlock or cheat card.
     // Cosmetic grants are idempotent (a second grant of the same unlock is a no-op); cheat
     // cards stack (each is one consumable +1-token bonus).
@@ -358,6 +411,42 @@ public class AdminController : ControllerBase
         return Accepted(new { restarting = true });
     }
 
+    // DELETE /api/admin/users/{id} — remove one account and everything hanging off it. Admin
+    // accounts (allowlisted email) are never deletable. Cascades cleanly via PurgeAccountsAsync.
+    [HttpDelete("users/{id}")]
+    public async Task<IActionResult> DeleteUser(string id)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id);
+        if (user == null) return NotFound(new { error = "no such user" });
+        if (AdminEmails.IsAdmin(_config, user.Email, user.ExternalProvider))
+            return BadRequest(new { error = "admin accounts can't be deleted" });
+
+        var name = user.DisplayName ?? user.UserName;
+        await PurgeAccountsAsync(new List<ApplicationUser> { user });
+        _logger.LogWarning("Admin deleted account {User}", id);
+        return Ok(new { deleted = true, displayName = name });
+    }
+
+    // POST /api/admin/users/purge-nonoauth  { confirm } — bulk-delete every account with no
+    // external provider (guests + legacy password logins). Requires the exact confirm phrase.
+    // Admins are OAuth by definition so they're spared; we guard on the allowlist anyway.
+    [HttpPost("users/purge-nonoauth")]
+    public async Task<IActionResult> PurgeNonOauth([FromBody] WipeRequest req)
+    {
+        if (req?.Confirm != PurgeGuestsPhrase)
+            return BadRequest(new { error = $"confirmation must be exactly \"{PurgeGuestsPhrase}\"" });
+
+        var all = await _db.Users.ToListAsync();
+        var doomed = all
+            .Where(u => string.IsNullOrEmpty(u.ExternalProvider))
+            .Where(u => !AdminEmails.IsAdmin(_config, u.Email, u.ExternalProvider))
+            .ToList();
+
+        await PurgeAccountsAsync(doomed);
+        _logger.LogWarning("Admin purged {Count} non-oauth accounts", doomed.Count);
+        return Ok(new { deleted = doomed.Count });
+    }
+
     // POST /api/admin/wipe  { confirm } — the danger-zone reset. Requires the exact confirm
     // phrase. Deletes all game history and every non-admin account (+ their data); admin
     // accounts are spared so the operator can still sign in afterward.
@@ -391,6 +480,53 @@ public class AdminController : ControllerBase
     }
 
     // --- helpers ---
+
+    // Cleanly remove a set of accounts and everything hanging off them, working around the
+    // two RESTRICT foreign keys (GamePlayer.UserId and Crew.OwnerUserId) that would otherwise
+    // block the delete. Cascade FKs (samples, style, stats, rewards, crew memberships) would
+    // go on their own, but we clear them explicitly too so behavior is identical on the
+    // in-memory provider the tests use. Assumes the caller already spared admins.
+    private async Task PurgeAccountsAsync(List<ApplicationUser> users)
+    {
+        if (users.Count == 0) return;
+        var ids = users.Select(u => u.Id).ToHashSet();
+
+        // RESTRICT #1: participation rows. Drop the user's seats; the games themselves stay.
+        var playerRows = await _db.GamePlayers.Where(p => ids.Contains(p.UserId)).ToListAsync();
+        _db.GamePlayers.RemoveRange(playerRows);
+
+        // Authored messages are SetNull-on-delete — do it explicitly. The message stays as
+        // history, just no longer attributed to a now-deleted account.
+        var authored = await _db.GameMessages
+            .Where(m => m.AuthorUserId != null && ids.Contains(m.AuthorUserId!))
+            .ToListAsync();
+        foreach (var m in authored) m.AuthorUserId = null;
+
+        // RESTRICT #2: owned crews. Hand ownership to the oldest OTHER member; disband if none.
+        var ownedCrews = await _db.Crews.Include(c => c.Members)
+            .Where(c => ids.Contains(c.OwnerUserId))
+            .ToListAsync();
+        foreach (var crew in ownedCrews)
+        {
+            var heir = crew.Members
+                .Where(m => !ids.Contains(m.UserId))
+                .OrderBy(m => m.JoinedAt)
+                .FirstOrDefault();
+            if (heir != null) crew.OwnerUserId = heir.UserId;
+            else _db.Crews.Remove(crew); // cascades its CrewMembers
+        }
+
+        // Cascade children, cleared explicitly for provider-agnostic behavior.
+        _db.CrewMembers.RemoveRange(await _db.CrewMembers.Where(m => ids.Contains(m.UserId)).ToListAsync());
+        _db.WritingSamples.RemoveRange(await _db.WritingSamples.Where(s => ids.Contains(s.UserId)).ToListAsync());
+        _db.StyleProfiles.RemoveRange(await _db.StyleProfiles.Where(s => ids.Contains(s.UserId)).ToListAsync());
+        _db.PlayerStats.RemoveRange(await _db.PlayerStats.Where(s => ids.Contains(s.UserId)).ToListAsync());
+        _db.UserRewards.RemoveRange(await _db.UserRewards.Where(r => ids.Contains(r.UserId)).ToListAsync());
+        await _db.SaveChangesAsync();
+
+        _db.Users.RemoveRange(users);
+        await _db.SaveChangesAsync();
+    }
 
     private string TierOf(bool isGuest, string? provider, string? email)
     {
