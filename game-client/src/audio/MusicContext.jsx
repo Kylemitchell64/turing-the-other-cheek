@@ -37,9 +37,12 @@ export function MusicProvider({ children }) {
   if (engineRef.current === null) engineRef.current = createChiptune();
   const supported = engineRef.current.isSupported();
 
+  // Default mood is CHILL and pre-selected ON — menus should hum quietly out of the box.
+  // A user who picks OFF (or another mood) has it persisted, so this default only applies to
+  // first-timers who've never touched the widget.
   const [localMood, setLocalMood] = useState(() => {
-    const m = readLS(LS.mood, "arcade");
-    return MOOD_OPTIONS.includes(m) ? m : "arcade";
+    const m = readLS(LS.mood, "chill");
+    return MOOD_OPTIONS.includes(m) ? m : "chill";
   });
   const [volume, setVolumeState] = useState(() => {
     const v = parseFloat(readLS(LS.volume, "0.7"));
@@ -91,11 +94,12 @@ export function MusicProvider({ children }) {
     if (engineRef.current) engineRef.current.start();
   }, []);
 
-  // Returning listeners who already opted in: resume on their first interaction anywhere on
-  // the page (a one-shot handler — a fresh gesture is all the browser needs to unlock audio).
+  // Music is on by default (phase 27): browsers forbid audio before a gesture, so the closest
+  // legal thing to autoplay is to start on the user's FIRST interaction anywhere on the page
+  // (a one-shot pointer/key handler). Nothing actually sounds if their persisted mood is OFF
+  // or they're muted — effectiveMood handles that — so people who turned it off aren't nagged.
   useEffect(() => {
     if (!supported || started) return;
-    if (readLS(LS.enabled, "false") !== "true") return;
     const onGesture = () => enable();
     window.addEventListener("pointerdown", onGesture, { once: true });
     window.addEventListener("keydown", onGesture, { once: true });

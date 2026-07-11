@@ -42,30 +42,32 @@ const midiToFreq = (m) => 440 * Math.pow(2, (m - 69) / 12);
 // ---- mood recipes ----
 // scale = semitone offsets from the root; root is a MIDI note. Voices are chosen per mood.
 // density controls how often the lead/percussion actually fire.
+// bpm is HALF what it "reads" as: phase 27 doubled the time between beats (the old tempos
+// felt too frantic under the menus), so these numbers are the already-halved values.
 const STEPS = 32; // two bars of 16th notes — enough for a non-repetitive loop
 const MOODS = {
   arcade: {
-    bpm: 132, root: 60, scale: [0, 2, 4, 7, 9, 12], // major pentatonic — upbeat, happy
+    bpm: 66, root: 60, scale: [0, 2, 4, 7, 9, 12], // major pentatonic — upbeat, happy
     leadWave: "square", bassWave: "square", leadGain: 0.5, bassGain: 0.55,
     density: 0.72, percDensity: 0.7, leadOct: 12, swing: 0.0,
   },
   chill: {
-    bpm: 92, root: 57, scale: [0, 2, 3, 5, 7, 9, 10], // A dorian-ish, mellow
+    bpm: 46, root: 57, scale: [0, 2, 3, 5, 7, 9, 10], // A dorian-ish, mellow
     leadWave: "triangle", bassWave: "square", leadGain: 0.42, bassGain: 0.4,
     density: 0.42, percDensity: 0.32, leadOct: 12, swing: 0.18,
   },
   spooky: {
-    bpm: 100, root: 55, scale: [0, 1, 3, 5, 7, 8, 11], // harmonic-minor-ish, tense
+    bpm: 50, root: 55, scale: [0, 1, 3, 5, 7, 8, 11], // harmonic-minor-ish, tense
     leadWave: "square", bassWave: "triangle", leadGain: 0.4, bassGain: 0.45,
     density: 0.34, percDensity: 0.22, leadOct: 12, swing: 0.0,
   },
   hype: {
-    bpm: 142, root: 62, scale: [0, 2, 4, 5, 7, 9, 11], // major, fast + driving
+    bpm: 71, root: 62, scale: [0, 2, 4, 5, 7, 9, 11], // major, fast + driving
     leadWave: "square", bassWave: "square", leadGain: 0.5, bassGain: 0.6,
     density: 0.86, percDensity: 0.9, leadOct: 12, swing: 0.0,
   },
   boss: {
-    bpm: 128, root: 48, scale: [0, 2, 3, 5, 7, 8, 10], // low natural minor — dramatic
+    bpm: 64, root: 48, scale: [0, 2, 3, 5, 7, 8, 10], // low natural minor — dramatic
     leadWave: "square", bassWave: "square", leadGain: 0.46, bassGain: 0.7,
     density: 0.6, percDensity: 0.62, leadOct: 12, swing: 0.0,
   },
