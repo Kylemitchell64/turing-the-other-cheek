@@ -27,7 +27,7 @@ public class StatsController : ControllerBase
     public async Task<IActionResult> Me()
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var stats = await _db.PlayerStats.FirstOrDefaultAsync(s => s.UserId == userId);
+        var stats = await _db.PlayerStats.AsNoTracking().FirstOrDefaultAsync(s => s.UserId == userId);
 
         return Ok(new StatsDto(
             DetectorWins: stats?.DetectorWins ?? 0,

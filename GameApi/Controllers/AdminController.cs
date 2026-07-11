@@ -248,6 +248,7 @@ public class AdminController : ControllerBase
             .ToDictionary(x => x.UserId, x => x.GamesPlayed);
 
         var rewardsByUser = (await _db.UserRewards
+                .AsNoTracking()
                 .Where(r => ids.Contains(r.UserId))
                 .ToListAsync())
             .GroupBy(r => r.UserId)
@@ -275,13 +276,13 @@ public class AdminController : ControllerBase
     [HttpGet("users/{id}")]
     public async Task<IActionResult> UserProfile(string id)
     {
-        var user = await _db.Users.FirstOrDefaultAsync(u => u.Id == id);
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == id);
         if (user == null) return NotFound(new { error = "no such user" });
 
-        var stats = await _db.PlayerStats.FirstOrDefaultAsync(p => p.UserId == id);
+        var stats = await _db.PlayerStats.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == id);
         var sampleCount = await _db.WritingSamples.CountAsync(s => s.UserId == id);
         var sampleChars = await _db.WritingSamples.Where(s => s.UserId == id).SumAsync(s => (long?)s.Text.Length) ?? 0;
-        var rewards = await _db.UserRewards.Where(r => r.UserId == id).ToListAsync();
+        var rewards = await _db.UserRewards.AsNoTracking().Where(r => r.UserId == id).ToListAsync();
 
         var crews = await _db.CrewMembers
             .Where(m => m.UserId == id)

@@ -68,6 +68,7 @@ public class ProfileController : ControllerBase
     public async Task<IActionResult> GetRewards()
     {
         var rewards = await _db.UserRewards
+            .AsNoTracking()
             .Where(r => r.UserId == UserId)
             .ToListAsync();
 
