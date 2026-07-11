@@ -17,7 +17,7 @@ const DIFFICULTIES = [
 const PACES = [
   { key: "flash", label: "FLASH 10s", blurb: "blink and its over. short answers only." },
   { key: "quick", label: "QUICK 20s", blurb: "keep it moving." },
-  { key: "standard", label: "STD 30s", blurb: "the classic." },
+  { key: "standard", label: "NORMAL 30s", blurb: "the classic." },
   { key: "relaxed", label: "RELAXED 45s", blurb: "room to think." },
   { key: "snail", label: "SNAIL 60s", blurb: "a full minute per question. for the overthinkers." },
 ];

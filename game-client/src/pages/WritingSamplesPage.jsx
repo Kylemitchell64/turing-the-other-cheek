@@ -91,7 +91,7 @@ export default function WritingSamplesPage() {
 
         {isGuest && (
           <div className="guest-note">
-            // guest names keep a light profile — sign in to build the full one.
+            // guest names keep a light profile — sign in to get Verified and keep every sample forever.
           </div>
         )}
 

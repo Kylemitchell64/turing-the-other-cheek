@@ -113,7 +113,7 @@ export default function LoginPage() {
 
         {anyOAuth && (
           <div className="oauth">
-            <div className="divider"><span>sign in &amp; save everything</span></div>
+            <div className="divider"><span>sign in &amp; get Verified</span></div>
             {providers.google && (
               <button type="button" className="ghost" onClick={() => oauth("google")} disabled={busy}>
                 sign in with Google
@@ -137,8 +137,8 @@ export default function LoginPage() {
               remembers you a bit. heads up: names left unused for 30 days get wiped.
             </p>
             <p className="modal-copy">
-              sign in instead and everything sticks around for good — it also trains a
-              sharper impostor against you, and never expires.
+              sign in with Google to get Verified — your character, samples and stats stick
+              around for good, never expire, and it trains a sharper impostor against you.
             </p>
             <button type="button" className="primary big" onClick={continueAsGuest} disabled={busy}>
               CONTINUE AS GUEST
