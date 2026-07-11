@@ -1624,6 +1624,7 @@ button.admin-link:hover { color: var(--amber); text-shadow: 0 0 8px rgba(255, 17
 .ft-label { display: flex; justify-content: space-between; font-size: 0.74rem; margin-bottom: 0.2rem; }
 .ft-label span:first-child { color: var(--text); }
 .ft-nums { color: var(--muted); }
+.ft-note { margin: 0.3rem 0 0; color: var(--muted); font-size: 0.64rem; line-height: 1.3; opacity: 0.8; }
 .ft-track { height: 9px; border-radius: 5px; background: rgba(57, 255, 20, 0.08); overflow: hidden; }
 .ft-fill { height: 100%; background: var(--neon); box-shadow: 0 0 8px rgba(57, 255, 20, 0.5); transition: width 0.4s ease; }
 .ft-fill.warm { background: var(--amber); box-shadow: 0 0 8px rgba(255, 179, 0, 0.5); }

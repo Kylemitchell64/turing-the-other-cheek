@@ -328,6 +328,11 @@ function FreeTier({ freetier }) {
                     style={{ width: `${Math.min(100, r.percent)}%` }}
                   />
                 </div>
+                {r.key === "render" && (
+                  <p className="ft-note">
+                    render hours reset on the 1st — 24/7 uptime burns ~744 of 750 hrs/mo. that's normal, not a leak.
+                  </p>
+                )}
               </div>
             ))}
           </div>
