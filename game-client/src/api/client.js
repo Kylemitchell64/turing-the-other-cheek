@@ -70,6 +70,10 @@ export const api = {
     if (search) q.set("search", search);
     return request(`/api/admin/users?${q.toString()}`, { token });
   },
+  adminUserProfile: (token, id) => request(`/api/admin/users/${id}`, { token }),
+  adminDeleteUser: (token, id) => request(`/api/admin/users/${id}`, { method: "DELETE", token }),
+  adminPurgeNonOauth: (token, confirm) =>
+    request("/api/admin/users/purge-nonoauth", { method: "POST", token, body: { confirm } }),
   adminGrant: (token, id, kind) =>
     request(`/api/admin/users/${id}/rewards`, { method: "POST", token, body: { kind } }),
   adminRevoke: (token, id, kind) =>

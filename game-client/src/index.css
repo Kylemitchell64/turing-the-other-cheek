@@ -684,6 +684,12 @@ button.danger-btn {
   color: var(--neon);
   text-shadow: 0 0 8px rgba(51, 255, 102, 0.6);
   padding: 0.1rem 0;
+  /* bracketed labels are single units — never let the closing "]" wander to its own line */
+  white-space: nowrap;
+}
+/* on the narrowest phones, ease letter-spacing before a heading would overflow */
+@media (max-width: 380px) {
+  .crt-head { letter-spacing: 1.5px; font-size: 0.78rem; }
 }
 
 /* --- game podium row (the focal point) --- */
@@ -1556,14 +1562,31 @@ button.admin-link:hover { color: var(--amber); text-shadow: 0 0 8px rgba(255, 17
 .admin-section { margin-top: 0.4rem; }
 .admin-loading { color: var(--muted); font-size: 0.82rem; padding: 0.5rem 0; }
 .admin-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
   border: 1px solid var(--neon-dim);
   color: var(--neon);
   font-size: 0.8rem;
   padding: 0.45rem 0.6rem;
   border-radius: 6px;
   background: rgba(57, 255, 20, 0.05);
+}
+.admin-notice-text { flex: 1 1 auto; }
+.admin-notice-x {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid var(--neon-dim);
+  color: var(--neon);
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 0.68rem;
+  padding: 0.2rem 0.45rem;
   cursor: pointer;
 }
+.admin-notice-x:hover { border-color: var(--neon); }
+.admin-hint { font-size: 0.72rem; color: var(--muted); margin: 0.3rem 0; }
 .panel.admin-404 { text-align: center; }
 
 /* overview tiles */
@@ -1638,6 +1661,15 @@ button.admin-link:hover { color: var(--amber); text-shadow: 0 0 8px rgba(255, 17
   background: #060a08;
   font-size: 0.76rem;
 }
+/* the whole row is a button now — strip the native chrome, keep it tappable + left-aligned */
+button.au-row-btn {
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  color: var(--text);
+  cursor: pointer;
+}
+button.au-row-btn:hover { border-color: var(--neon); }
 .au-head { display: none; }
 .au-name { color: var(--neon); font-weight: bold; flex: 1 1 40%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .au-seen, .au-games { color: var(--muted); }
@@ -1659,6 +1691,9 @@ button.admin-link:hover { color: var(--amber); text-shadow: 0 0 8px rgba(255, 17
   font-family: inherit;
 }
 .reward-chip:hover { border-color: var(--danger); color: var(--danger); }
+/* read-only chips shown in a user row (management happens in the profile drawer) */
+.reward-chip.static { cursor: default; }
+.reward-chip.static:hover { border-color: var(--neon-dim); color: var(--neon); }
 .rc-x { opacity: 0.7; }
 .au-grant { display: flex; gap: 0.3rem; align-items: center; }
 .au-grant select {
@@ -1682,6 +1717,33 @@ button.au-grant-btn { padding: 0.25rem 0.55rem; font-size: 0.85rem; line-height:
 .tier-badge.tier-admin { color: var(--amber); border-color: var(--amber); }
 .tier-badge.tier-google, .tier-badge.tier-github { color: var(--neon); border-color: var(--neon-dim); }
 .tier-badge.tier-registered { color: var(--text); }
+
+/* per-user profile drawer */
+.modal.user-profile { text-align: left; max-width: 30rem; }
+.up-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.up-head .modal-head { margin: 0; }
+.up-sub { font-size: 0.72rem; color: var(--muted); margin: 0.25rem 0 0.6rem; word-break: break-word; }
+.up-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; margin-bottom: 0.7rem; }
+.prof-stat { border: 1px solid var(--neon-dim); border-radius: 6px; background: #060a08; padding: 0.4rem 0.5rem; }
+.prof-stat-num { font-size: 0.95rem; font-weight: bold; color: var(--text); }
+.prof-stat-lab { font-size: 0.64rem; color: var(--muted); }
+.up-block { margin-bottom: 0.7rem; }
+.up-block-lab { font-size: 0.66rem; letter-spacing: 1px; color: var(--neon); margin-bottom: 0.3rem; }
+.up-crews { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.up-crew { font-size: 0.68rem; color: var(--text); border: 1px solid var(--neon-dim); border-radius: 999px; padding: 0.1rem 0.45rem; }
+.up-rewards { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; margin-bottom: 0.5rem; }
+.up-grant { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+.up-grant select {
+  background: #060a08;
+  border: 1px solid var(--neon-dim);
+  color: var(--text);
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 0.74rem;
+  padding: 0.3rem;
+}
+.up-actions { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; margin-top: 0.3rem; }
+.up-protected { font-size: 0.7rem; color: var(--amber); }
 
 .admin-pager { display: flex; justify-content: space-between; align-items: center; margin-top: 0.6rem; }
 .admin-pager .ghost { padding: 0.4rem 0.9rem; }

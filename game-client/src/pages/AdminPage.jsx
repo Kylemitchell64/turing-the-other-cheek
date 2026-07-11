@@ -54,11 +54,16 @@ export default function AdminPage() {
   const [usersData, setUsersData] = useState(null);
   const [notice, setNotice] = useState(null);
 
+  // The user whose profile drawer is open (id), and the fetched synopsis for it.
+  const [profileId, setProfileId] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [pendingDelete, setPendingDelete] = useState(null); // the user object awaiting delete confirm
+
   // Ops: current maintenance switch (seeded once from the public probe), and the modal
-  // machine driving the restart + wipe confirmations.
+  // machine driving the restart + wipe + purge confirmations.
   const [maintOn, setMaintOn] = useState(false);
   const [maintMsg, setMaintMsg] = useState("");
-  const [modal, setModal] = useState(null); // null | "restart" | "wipe"
+  const [modal, setModal] = useState(null); // null | "restart" | "wipe" | "purge"
 
   // Live-ish analytics: pull the read endpoints on mount and refresh the volatile ones.
   useEffect(() => {
@@ -92,17 +97,55 @@ export default function AdminPage() {
     return () => clearTimeout(id);
   }, [loadUsers, isAdmin]);
 
+  // Fetch (or refresh) the open profile drawer.
+  const loadProfile = useCallback(async (id) => {
+    if (!id) return;
+    const { ok, data } = await api.adminUserProfile(token, id);
+    if (ok) setProfile(data);
+  }, [token]);
+
+  useEffect(() => {
+    if (profileId) loadProfile(profileId);
+    else setProfile(null);
+  }, [profileId, loadProfile]);
+
+  const openProfile = (id) => { setProfile(null); setProfileId(id); };
+  const closeProfile = () => { setProfileId(null); setProfile(null); };
+
   const grant = async (id, kind) => {
     if (!kind) return;
     const { ok } = await api.adminGrant(token, id, kind);
-    setNotice(ok ? `granted ${kind}` : `grant failed`);
-    await loadUsers();
+    setNotice(ok ? `granted ${labelForKind(kind)} — it now shows on their rewards.` : "couldn't grant that reward.");
+    await Promise.all([loadUsers(), loadProfile(id)]);
   };
 
   const revoke = async (id, kind) => {
     const { ok } = await api.adminRevoke(token, id, kind);
-    setNotice(ok ? `revoked ${kind}` : `revoke failed`);
-    await loadUsers();
+    setNotice(ok ? `revoked ${labelForKind(kind)}.` : "couldn't revoke that reward.");
+    await Promise.all([loadUsers(), loadProfile(id)]);
+  };
+
+  const deleteUser = async (u) => {
+    setPendingDelete(null);
+    const { ok, data } = await api.adminDeleteUser(token, u.id);
+    if (ok) {
+      setNotice(`deleted ${data.displayName || u.displayName} and all their data.`);
+      closeProfile();
+      await loadUsers();
+    } else {
+      setNotice(data?.error ? `couldn't delete: ${data.error}` : "couldn't delete that account.");
+    }
+  };
+
+  const purgeGuests = async () => {
+    setModal(null);
+    const { ok, data } = await api.adminPurgeNonOauth(token, "DELETE GUESTS");
+    if (ok) {
+      setNotice(`purged ${data.deleted} non-oauth account${data.deleted === 1 ? "" : "s"} (guests + password logins).`);
+      await loadUsers();
+    } else {
+      setNotice("couldn't purge non-oauth accounts.");
+    }
   };
 
   // Seed the maintenance form from the live status once (later edits are the operator's).
@@ -148,7 +191,12 @@ export default function AdminPage() {
         <button className="ghost" onClick={() => navigate("/")}>exit</button>
       </div>
 
-      {notice && <div className="admin-notice" onClick={() => setNotice(null)}>{notice}</div>}
+      {notice && (
+        <div className="admin-notice" role="status">
+          <span className="admin-notice-text">{notice}</span>
+          <button className="admin-notice-x" onClick={() => setNotice(null)}>dismiss ✕</button>
+        </div>
+      )}
 
       <Overview overview={overview} />
       <FreeTier freetier={freetier} />
@@ -159,8 +207,7 @@ export default function AdminPage() {
         page={page}
         onSearch={(v) => { setSearch(v); setPage(1); }}
         onPage={setPage}
-        onGrant={grant}
-        onRevoke={revoke}
+        onOpen={openProfile}
       />
 
       <Ops
@@ -171,16 +218,40 @@ export default function AdminPage() {
         onRestart={() => setModal("restart")}
       />
 
-      <DangerZone onWipe={() => setModal("wipe")} />
+      <DangerZone onWipe={() => setModal("wipe")} onPurge={() => setModal("purge")} />
 
+      {profileId && (
+        <UserProfile
+          profile={profile}
+          onClose={closeProfile}
+          onGrant={grant}
+          onRevoke={revoke}
+          onDelete={(u) => setPendingDelete(u)}
+        />
+      )}
+      {pendingDelete && (
+        <DeleteUserModal user={pendingDelete} onConfirm={() => deleteUser(pendingDelete)} onCancel={() => setPendingDelete(null)} />
+      )}
       {modal === "restart" && (
         <RestartModal onConfirm={doRestart} onCancel={() => setModal(null)} />
       )}
       {modal === "wipe" && (
         <WipeModal onConfirm={doWipe} onCancel={() => setModal(null)} />
       )}
+      {modal === "purge" && (
+        <PurgeModal onConfirm={purgeGuests} onCancel={() => setModal(null)} />
+      )}
     </div>
   );
+}
+
+// Human labels for reward kinds, shared by the grant control, chips, and notices.
+function labelForKind(kind) {
+  if (kind === "cheat_card") return "cheat card";
+  const [type, id] = kind.split(":");
+  if (type === "outfit") return `outfit ${id}`;
+  if (type === "accessory") return `accessory ${id}`;
+  return kind;
 }
 
 function Overview({ overview }) {
@@ -282,7 +353,7 @@ function Timeline({ timeline }) {
 
   return (
     <section className="admin-section">
-      <div className="crt-head">[ TIMELINE · 30d games/day ]</div>
+      <div className="crt-head">[ TIMELINE · 30d ]</div>
       {!timeline ? (
         <p className="admin-loading">loading…</p>
       ) : (
@@ -318,7 +389,7 @@ function Timeline({ timeline }) {
   );
 }
 
-function Users({ usersData, search, page, onSearch, onPage, onGrant, onRevoke }) {
+function Users({ usersData, search, page, onSearch, onPage, onOpen }) {
   const users = usersData?.users || [];
   const total = usersData?.total || 0;
   const maxUsage = usersData?.maxDataUsage || 0;
@@ -327,6 +398,7 @@ function Users({ usersData, search, page, onSearch, onPage, onGrant, onRevoke })
   return (
     <section className="admin-section">
       <div className="crt-head">[ USERS ]</div>
+      <p className="admin-hint">tap a user to see their full profile, grant/revoke rewards, or delete the account.</p>
       <input
         className="admin-search"
         type="text"
@@ -343,11 +415,10 @@ function Users({ usersData, search, page, onSearch, onPage, onGrant, onRevoke })
           <span className="au-games">games</span>
           <span className="au-data">data</span>
           <span className="au-rewards">rewards</span>
-          <span className="au-grant">grant</span>
         </div>
 
         {users.map((u) => (
-          <UserRow key={u.id} u={u} maxUsage={maxUsage} onGrant={onGrant} onRevoke={onRevoke} />
+          <UserRow key={u.id} u={u} maxUsage={maxUsage} onOpen={onOpen} />
         ))}
         {users.length === 0 && <p className="admin-loading">no users</p>}
       </div>
@@ -361,18 +432,22 @@ function Users({ usersData, search, page, onSearch, onPage, onGrant, onRevoke })
   );
 }
 
-function UserRow({ u, maxUsage, onGrant, onRevoke }) {
-  const [kind, setKind] = useState(GRANTABLE[0].kind);
-  const dataPct = maxUsage > 0 ? (u.dataUsage / maxUsage) * 100 : 0;
-  const r = u.rewards || { outfits: [], accessories: [], cheatCards: 0 };
-  const chips = [
-    ...r.outfits.map((i) => ({ kind: `outfit:${i}`, label: `o${i}` })),
-    ...r.accessories.map((i) => ({ kind: `accessory:${i}`, label: `a${i}` })),
-    ...(r.cheatCards > 0 ? [{ kind: "cheat_card", label: `cc×${r.cheatCards}` }] : []),
+// One reward summary → readable chips (read-only in the row; managed in the profile drawer).
+function rewardChips(r) {
+  const rw = r || { outfits: [], accessories: [], cheatCards: 0 };
+  return [
+    ...rw.outfits.map((i) => ({ kind: `outfit:${i}`, label: `outfit ${i}` })),
+    ...rw.accessories.map((i) => ({ kind: `accessory:${i}`, label: `accessory ${i}` })),
+    ...(rw.cheatCards > 0 ? [{ kind: "cheat_card", label: `cheat ×${rw.cheatCards}` }] : []),
   ];
+}
+
+function UserRow({ u, maxUsage, onOpen }) {
+  const dataPct = maxUsage > 0 ? (u.dataUsage / maxUsage) * 100 : 0;
+  const chips = rewardChips(u.rewards);
 
   return (
-    <div className="au-row">
+    <button className="au-row au-row-btn" onClick={() => onOpen(u.id)}>
       <span className="au-name" title={u.username}>{u.displayName}</span>
       <span className="au-tier"><span className={`tier-badge tier-${u.tier}`}>{u.tier}</span></span>
       <span className="au-seen">{fmtDate(u.lastSeen)}</span>
@@ -382,20 +457,157 @@ function UserRow({ u, maxUsage, onGrant, onRevoke }) {
         <span className="au-data-num">{fmtBytes(u.dataUsage)}</span>
       </span>
       <span className="au-rewards">
-        {chips.length === 0 && <span className="au-none">—</span>}
-        {chips.map((c) => (
-          <button key={c.kind + c.label} className="reward-chip" title={`revoke ${c.kind}`}
-            onClick={() => onRevoke(u.id, c.kind)}>
-            {c.label} <span className="rc-x">×</span>
-          </button>
-        ))}
+        {chips.length === 0
+          ? <span className="au-none">no rewards</span>
+          : chips.map((c) => <span key={c.kind + c.label} className="reward-chip static">{c.label}</span>)}
       </span>
-      <span className="au-grant">
-        <select value={kind} onChange={(e) => setKind(e.target.value)}>
-          {GRANTABLE.map((g) => <option key={g.kind} value={g.kind}>{g.label}</option>)}
-        </select>
-        <button className="ghost au-grant-btn" onClick={() => onGrant(u.id, kind)}>+</button>
-      </span>
+    </button>
+  );
+}
+
+// The per-user profile drawer: everything about one account, plus the grant/revoke and
+// delete controls (which used to be a mystery "+" on the row).
+function UserProfile({ profile, onClose, onGrant, onRevoke, onDelete }) {
+  const [kind, setKind] = useState(GRANTABLE[0].kind);
+
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal terminal user-profile" onClick={(e) => e.stopPropagation()}>
+        {!profile ? (
+          <p className="admin-loading">loading profile…</p>
+        ) : (
+          <>
+            <div className="up-head">
+              <h2 className="modal-head">{profile.displayName}</h2>
+              <span className={`tier-badge tier-${profile.tier}`}>{profile.tier}</span>
+            </div>
+            <p className="up-sub">
+              @{profile.username} · {profile.provider}
+              {profile.email ? ` · ${profile.email}` : ""}
+            </p>
+
+            <div className="up-grid">
+              <ProfStat label="last seen" value={fmtDate(profile.lastSeen)} />
+              <ProfStat label="games played" value={profile.gamesPlayed} />
+              <ProfStat label="detector wins" value={profile.detectorWins} />
+              <ProfStat label="times fooled" value={profile.timesFooled} />
+              <ProfStat label="read by AI" value={profile.timesReadByAi} />
+              <ProfStat label="AI escapes seen" value={profile.aiSurvivalGamesWitnessed} />
+              <ProfStat label="writing samples" value={`${profile.sampleCount} · ${fmtBytes(profile.sampleChars)}`} />
+              <ProfStat label="character saved" value={profile.hasCharacter ? "yes" : "no"} />
+            </div>
+
+            <div className="up-block">
+              <div className="up-block-lab">crews</div>
+              {profile.crews?.length ? (
+                <div className="up-crews">
+                  {profile.crews.map((c) => (
+                    <span key={c.joinCode} className="up-crew">
+                      {c.name}{c.isOwner ? " (owner)" : ""}
+                    </span>
+                  ))}
+                </div>
+              ) : <span className="au-none">none</span>}
+            </div>
+
+            <div className="up-block">
+              <div className="up-block-lab">rewards</div>
+              <div className="up-rewards">
+                {rewardChips(profile.rewards).length === 0 && <span className="au-none">none</span>}
+                {rewardChips(profile.rewards).map((c) => (
+                  <button key={c.kind + c.label} className="reward-chip" title={`revoke ${c.label}`}
+                    onClick={() => onRevoke(profile.id, c.kind)}>
+                    {c.label} <span className="rc-x">✕</span>
+                  </button>
+                ))}
+              </div>
+              <div className="up-grant">
+                <select value={kind} onChange={(e) => setKind(e.target.value)}>
+                  {GRANTABLE.map((g) => <option key={g.kind} value={g.kind}>{g.label}</option>)}
+                </select>
+                <button className="ghost" onClick={() => onGrant(profile.id, kind)}>grant reward</button>
+              </div>
+            </div>
+
+            <div className="up-actions">
+              <button className="link" onClick={onClose}>close</button>
+              {profile.isAdmin ? (
+                <span className="up-protected">admin — protected, can't be deleted</span>
+              ) : (
+                <button className="danger-btn" onClick={() => onDelete(profile)}>delete account…</button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProfStat({ label, value }) {
+  return (
+    <div className="prof-stat">
+      <div className="prof-stat-num">{value}</div>
+      <div className="prof-stat-lab">{label}</div>
+    </div>
+  );
+}
+
+function DeleteUserModal({ user, onConfirm, onCancel }) {
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal terminal" onClick={(e) => e.stopPropagation()}>
+        <h2 className="modal-head danger-head">[ DELETE ACCOUNT ]</h2>
+        <p className="modal-copy">
+          permanently delete <b className="ai-name">{user.displayName}</b> and everything tied to
+          the account — writing samples, stats, rewards, and crew memberships. there is no undo.
+        </p>
+        <button className="danger-btn" onClick={onConfirm}>delete {user.displayName}</button>
+        <button className="link" onClick={onCancel}>cancel</button>
+      </div>
+    </div>
+  );
+}
+
+const PURGE_PHRASE = "DELETE GUESTS";
+
+// Deletes every non-oauth account (guests + legacy password logins). Lighter than the full
+// wipe (two steps) but still gated by a typed phrase.
+function PurgeModal({ onConfirm, onCancel }) {
+  const [step, setStep] = useState(1);
+  const [phrase, setPhrase] = useState("");
+
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div className="modal terminal" onClick={(e) => e.stopPropagation()}>
+        <h2 className="modal-head danger-head">[ DELETE NON-OAUTH USERS ]</h2>
+        {step === 1 ? (
+          <>
+            <p className="modal-copy">
+              this deletes every account WITHOUT a Google/GitHub login — all guests and any
+              legacy password accounts — along with their samples, stats, and rewards. oauth
+              logins (including admins) are untouched. no undo.
+            </p>
+            <button className="danger-btn" onClick={() => setStep(2)}>continue</button>
+            <button className="link" onClick={onCancel}>cancel</button>
+          </>
+        ) : (
+          <>
+            <p className="modal-copy">type <b className="ai-name">{PURGE_PHRASE}</b> to confirm.</p>
+            <input
+              type="text"
+              value={phrase}
+              onChange={(e) => setPhrase(e.target.value)}
+              placeholder={PURGE_PHRASE}
+              autoFocus
+            />
+            <button className="danger-btn" disabled={phrase !== PURGE_PHRASE} onClick={onConfirm}>
+              delete non-oauth users
+            </button>
+            <button className="link" onClick={onCancel}>cancel</button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -433,11 +645,15 @@ function Ops({ maintOn, maintMsg, onMsg, onApply, onRestart }) {
   );
 }
 
-function DangerZone({ onWipe }) {
+function DangerZone({ onWipe, onPurge }) {
   return (
     <section className="admin-section danger-zone">
       <div className="crt-head danger-head">[ DANGER ZONE ]</div>
       <div className="danger-box">
+        <p className="danger-copy">
+          delete every guest + legacy password account (keeps games and oauth logins).
+        </p>
+        <button className="danger-btn" onClick={onPurge}>delete non-oauth users…</button>
         <p className="danger-copy">
           wipe every game and all non-admin accounts. permanent. admin logins survive.
         </p>
