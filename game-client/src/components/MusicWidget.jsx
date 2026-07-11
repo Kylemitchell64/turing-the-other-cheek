@@ -11,6 +11,39 @@ const MOOD_LABEL = {
   hype: "HYPE", boss: "BOSS", off: "OFF",
 };
 
+// Inline music-note glyph. The old text "♪" rendered as tofu on phones whose Courier
+// fallback lacks the glyph, so it's an SVG now — currentColor keeps the neon fill + hover
+// glow working. `slashed` draws the "no sound" bar for muted/off.
+function MusicNote({ slashed = false }) {
+  return (
+    <svg
+      className="music-note-svg"
+      viewBox="0 0 24 24"
+      width="1em"
+      height="1em"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path
+        d="M9 17V6l10-2v9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="6.5" cy="17" r="2.6" fill="currentColor" />
+      <circle cx="16.5" cy="15" r="2.6" fill="currentColor" />
+      {slashed && (
+        <line
+          x1="3" y1="21" x2="21" y2="3"
+          stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+        />
+      )}
+    </svg>
+  );
+}
+
 export default function MusicWidget() {
   const {
     supported, localMood, setMood, volume, setVolume,
@@ -45,13 +78,13 @@ export default function MusicWidget() {
           aria-label="open music controls"
           title="music"
         >
-          <span className="music-note">{muted || shownMood === "off" ? "♪̸" : "♪"}</span>
+          <span className="music-note"><MusicNote slashed={muted || shownMood === "off"} /></span>
           {!started && <span className="music-hint">tap for sound</span>}
         </button>
       ) : (
         <div className="music-panel">
           <div className="music-head">
-            <span className="music-title">♪ MUSIC</span>
+            <span className="music-title"><MusicNote /> MUSIC</span>
             <button type="button" className="music-x" onClick={() => setOpen(false)} aria-label="collapse">
               ▾
             </button>

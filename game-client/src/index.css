@@ -1854,7 +1854,8 @@ button.ops-pause { padding: 0.55rem 1rem; }
   box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
 }
 .music-fab:hover { border-color: var(--neon); box-shadow: 0 0 10px rgba(51, 255, 102, 0.25); }
-.music-note { font-size: 1.1rem; line-height: 1; text-shadow: 0 0 6px rgba(51, 255, 102, 0.6); }
+.music-note { font-size: 1.1rem; line-height: 1; }
+.music-note-svg { display: inline-block; vertical-align: -0.15em; filter: drop-shadow(0 0 4px rgba(51, 255, 102, 0.6)); }
 .music-hint {
   font-size: 0.6rem;
   letter-spacing: 1px;
