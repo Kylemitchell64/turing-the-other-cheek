@@ -43,9 +43,15 @@ Backend is in `GameApi`, the phone-first React client is in `game-client`.
 - Game ends on a correct un-vetoed accusation (Detector win), or after 8 rounds / all
   humans eliminated (AI survives).
 
+There's also a **reverse mode**: no hidden impostor — everyone's human, and the *AI* is the one
+guessing who wrote which (shuffled, anonymous) answer each round. It's the same style-profile
+tech pointed the other way, so it's gated on having a bit of play history (see the ADRs). The
+whole client is phone-first and got a dedicated mobile visual sweep so nothing breaks on a small
+screen.
+
 ## Tests & CI
 
-Every push and PR runs the whole thing through GitHub Actions — the .NET suite (130 tests on EF InMemory, no DB needed), the client lint + build, a Docker image build, and a 4-browser Playwright game played start to finish. Green badge above means all of that passed on `main`.
+Every push and PR runs the whole thing through GitHub Actions — the .NET suite (195 tests on EF InMemory, no DB needed), the client lint + build, a Docker image build, and a Playwright game played start to finish across desktop and mobile viewports. Green badge above means all of that passed on `main`.
 
 ## Load test
 
@@ -169,3 +175,15 @@ into the AI's system prompt at the next lobby start. The more you play, the bett
 The whole thing is audited so the AI's identity never leaks in any payload before game end —
 rosters carry no user IDs, revealed answers are keyed by display name only and shuffled, and
 the veto rule exists specifically so a veto can't confirm a correct guess.
+
+## Engineering notes
+
+The interesting decisions are written up as short ADRs in [`docs/adr/`](docs/adr/) — the
+free-tier-only stack, the Gemini → Groq → Cerebras failover chain, why lobby state lives in
+memory, the JWT/sessionStorage auth choices, how the AI stays anonymous in every payload,
+difficulty as flag records, signed pack share codes, per-user rate limiting, and reverse mode.
+
+The anonymity side has its own [threat model](docs/threat-model.md) — the ways a player could try
+to unmask the AI (frame sniffing, timing, statistical tells, host abuse, cross-rematch replay)
+and what the code does about each, plus the ordinary web hardening (auth, rate limits, admin gate,
+pack-code signing, prompt-injection guardrails).
