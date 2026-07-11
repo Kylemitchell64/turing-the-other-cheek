@@ -1945,12 +1945,14 @@ button.ops-pause { padding: 0.55rem 1rem; }
 }
 
 /* ---- home mascot robot (phase 21): wanders the bottom, behind/below the menu ---- */
+/* phase 27: pinned to the viewport bottom (fixed) so it follows the scroll; the taller strip
+   gives the fall/rise room to travel without the sprite getting clipped mid-air. */
 .home-robot {
-  position: absolute;
+  position: fixed;
   left: 0;
   right: 0;
-  bottom: 0.4rem;
-  height: 64px;
+  bottom: 0;
+  height: 120px;
   pointer-events: none;
   overflow: hidden;
   z-index: 0;
@@ -1958,9 +1960,16 @@ button.ops-pause { padding: 0.55rem 1rem; }
 }
 .home-robot-walker {
   position: absolute;
-  bottom: 0;
+  bottom: 0.4rem;
   transition: left 0.06s linear;
   filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
+}
+/* inner wrapper carries the scroll fall/rise squash-stretch (phase 27), kept off the walker
+   so it never fights the left/right walk or the facing flip. Grounded at the feet. */
+.wanderer-body {
+  display: inline-block;
+  transform-origin: 50% 100%;
+  will-change: transform;
 }
 
 /* dressing-room idle sway: smooth weight-shift on the creator preview (phase 21) */
