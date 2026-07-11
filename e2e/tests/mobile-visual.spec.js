@@ -62,6 +62,19 @@ test('every screen survives the phone-viewport visual sweep', async ({ browser }
     // --- character creator ----------------------------------------------------
     await host.getByRole('button', { name: 'edit character' }).click();
     await auditScreen(host, '04-character-creator', findings);
+
+    // Cycle EVERY layer through ALL of its options and scan each state. The value label
+    // widens as indices climb (e.g. "11 / 16"), and with the retro pack there are a lot
+    // more of them — this makes sure no long label can ever shove the ">" arrow off the
+    // edge again (the phone overflow bug). 22 clicks wraps past the longest layer.
+    for (const layer of ['BASE', 'HAIR', 'OUTFIT', 'ACCESSORY']) {
+      const next = host.getByRole('button', { name: `next ${layer}` });
+      for (let i = 0; i < 22; i++) {
+        await next.click();
+        await auditScreen(host, `04-creator-${layer.toLowerCase()}`, findings, { shot: false, settle: 60 });
+      }
+    }
+    await auditScreen(host, '04-creator-swept', findings);
     await host.getByRole('button', { name: 'cancel' }).click();
 
     // --- stats -----------------------------------------------------------------

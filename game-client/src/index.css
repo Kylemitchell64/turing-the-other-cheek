@@ -1147,6 +1147,10 @@ button.danger-btn {
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  /* let the label give up room + wrap so it never shoves the cycler off-screen */
+  flex: 0 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 /* premium reward markers on the outfit / accessory rows */
@@ -1168,12 +1172,18 @@ button.danger-btn {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  /* the cycler owns the rest of the row and can shrink; the middle value flexes so the
+     right arrow can never get pushed past the viewport edge (the phone overflow bug). */
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-end;
 }
 
 button.layer-arrow {
   /* 44px — phone-thumb sized (the sweep flagged the old 32px squares) */
   width: 2.75rem;
   height: 2.75rem;
+  flex: 0 0 auto; /* never shrink the tap targets — the value column absorbs instead */
   padding: 0;
   font-size: 1.05rem;
   line-height: 1;
@@ -1190,10 +1200,12 @@ button.layer-arrow:hover:not(:disabled) {
 button.layer-arrow:disabled { opacity: 0.4; cursor: default; }
 
 .layer-val {
-  min-width: 4.5rem;
+  flex: 1 1 0;
+  min-width: 0; /* shrink below content width instead of overflowing the row */
   text-align: center;
   font-size: 0.85rem;
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 /* --- home "what is this?" bio panel --- */

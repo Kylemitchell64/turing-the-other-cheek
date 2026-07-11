@@ -138,15 +138,19 @@ function scanForVisualIssues() {
 }
 
 // Sweep one screen: run the in-page scan, screenshot it, and fold results into the
-// shared findings list keyed by the screen label.
-export async function auditScreen(page, label, findings) {
+// shared findings list keyed by the screen label. shot:false skips the screenshot and
+// uses a shorter settle — for tight loops (e.g. cycling every creator layer option) where
+// only the overflow scan matters, not another near-identical png.
+export async function auditScreen(page, label, findings, { shot = true, settle = 400 } = {}) {
   // Let layout/animations settle so we don't flag mid-transition positions.
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(settle);
   const issues = await page.evaluate(scanForVisualIssues);
 
-  fs.mkdirSync(SHOT_DIR, { recursive: true });
-  const shot = path.join(SHOT_DIR, `${label.replace(/[^a-z0-9-]/gi, '_')}.png`);
-  await page.screenshot({ path: shot, fullPage: false });
+  if (shot) {
+    fs.mkdirSync(SHOT_DIR, { recursive: true });
+    const file = path.join(SHOT_DIR, `${label.replace(/[^a-z0-9-]/gi, '_')}.png`);
+    await page.screenshot({ path: file, fullPage: false });
+  }
 
   for (const issue of issues) findings.push({ screen: label, ...issue });
 }
