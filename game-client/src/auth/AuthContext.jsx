@@ -59,7 +59,7 @@ export function AuthProvider({ children }) {
     const data = await res.json();
     setToken(data.token);
     return data;
-  }, []);
+  }, [setToken]);
 
   // Guest login: username only, no password. Same name later resumes the same account.
   const guestLogin = useCallback(async (username) => {
@@ -75,10 +75,10 @@ export function AuthProvider({ children }) {
     const data = await res.json();
     setToken(data.token);
     return data;
-  }, []);
+  }, [setToken]);
 
   // Drop a JWT straight in (OAuth callback hands us one via the URL fragment).
-  const applyToken = useCallback((t) => setToken(t), []);
+  const applyToken = useCallback((t) => setToken(t), [setToken]);
 
   // Claim a display name for the signed-in account (fresh OAuth users). Free name -> set;
   // a prior guest's name -> the server merges that guest in and hands back a fresh token.
@@ -95,7 +95,7 @@ export function AuthProvider({ children }) {
     const data = await res.json();
     setToken(data.token);
     return data;
-  }, []);
+  }, [setToken]);
 
   const register = useCallback(async (username, displayName, password) => {
     const res = await fetch(`${API_BASE}/api/auth/register`, {
@@ -110,9 +110,9 @@ export function AuthProvider({ children }) {
     const data = await res.json();
     setToken(data.token);
     return data;
-  }, []);
+  }, [setToken]);
 
-  const logout = useCallback(() => setToken(null), []);
+  const logout = useCallback(() => setToken(null), [setToken]);
 
   const user = token && !isTokenExpired(token) ? parseJwt(token) : null;
 
