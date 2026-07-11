@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useLobby } from "../game/LobbyContext";
 import { PACKS, packFor } from "../game/packs";
 import PackMakerModal from "../components/PackMakerModal";
+import MenuWanderer from "../components/MenuWanderer";
 
 // Impostor difficulty + answer pace options. Keys must match the server's
 // DifficultyProfile / PaceOptions keys exactly.
@@ -283,6 +284,8 @@ export default function LobbyPage() {
           onClose={() => setShowMaker(false)}
         />
       )}
+
+      <MenuWanderer />
     </div>
   );
 }

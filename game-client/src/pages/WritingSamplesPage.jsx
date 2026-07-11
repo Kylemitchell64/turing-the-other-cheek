@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
+import MenuWanderer from "../components/MenuWanderer";
 
 const MAX_CHARS = 10000;
 
@@ -159,6 +160,8 @@ export default function WritingSamplesPage() {
           </>
         )}
       </div>
+
+      <MenuWanderer />
     </div>
   );
 }

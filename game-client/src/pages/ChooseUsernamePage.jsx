@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { needsCreator } from "../auth/firstUse";
+import MenuWanderer from "../components/MenuWanderer";
 
 // Where a brand-new OAuth account lands before anything else. Same name rules as guest
 // login (3-20, letters/numbers/underscore). Picking a name that a guest already used
@@ -67,6 +68,8 @@ export default function ChooseUsernamePage() {
           </button>
         </form>
       </div>
+
+      <MenuWanderer />
     </div>
   );
 }

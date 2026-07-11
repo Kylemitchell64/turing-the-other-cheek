@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useLobby } from "../game/LobbyContext";
 import { needsCreator } from "../auth/firstUse";
 import MaintenanceBanner from "../components/MaintenanceBanner";
+import MenuWanderer from "../components/MenuWanderer";
 
 // Shown once per device before the very first guest play so nobody is surprised that a
 // guest name can get swept. After that, PLAY goes straight through.
@@ -159,6 +160,8 @@ export default function LoginPage() {
           </div>
         </div>
       )}
+
+      <MenuWanderer />
     </div>
   );
 }

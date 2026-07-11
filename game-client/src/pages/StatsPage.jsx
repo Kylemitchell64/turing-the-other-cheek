@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
+import MenuWanderer from "../components/MenuWanderer";
 
 export default function StatsPage() {
   const { token, user } = useAuth();
@@ -63,6 +64,8 @@ export default function StatsPage() {
           </div>
         )}
       </div>
+
+      <MenuWanderer />
     </div>
   );
 }

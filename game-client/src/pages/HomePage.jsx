@@ -4,7 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useLobby } from "../game/LobbyContext";
 import MaintenanceBanner from "../components/MaintenanceBanner";
 import CrewsPanel from "../components/CrewsPanel";
-import HomeRobot from "../components/HomeRobot";
+import MenuWanderer from "../components/MenuWanderer";
 
 export default function HomePage() {
   const { user, logout } = useAuth();
@@ -136,7 +136,7 @@ export default function HomePage() {
       </div>
       </div>
 
-      <HomeRobot />
+      <MenuWanderer />
     </div>
   );
 }
