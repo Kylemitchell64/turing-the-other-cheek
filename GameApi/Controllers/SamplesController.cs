@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using GameApi.Data;
 using GameApi.Models;
+using GameApi.Moderation;
 
 namespace GameApi.Controllers;
 
@@ -54,6 +55,10 @@ public class SamplesController : ControllerBase
             return BadRequest(new { error = "Sample can't be empty" });
         if (text.Length > MaxSampleChars)
             text = text[..MaxSampleChars];
+        // Ordinary swearing is fine; slurs are not. Samples train the AI, so this is where
+        // the line matters most. (In-game answers are ephemeral + peer-visible — not filtered.)
+        if (SlurFilter.ContainsSlur(text))
+            return BadRequest(new { error = SlurFilter.RejectionMessage });
 
         var sample = new WritingSample
         {

@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using GameApi.Moderation;
 
 namespace GameApi.GameLoop;
 
@@ -70,8 +71,7 @@ Then {{count}} lines, each one party prompt, no numbering, no blank lines, no co
         new(@"\b(kill|hang|cut|starve|drown|hurt)\s+(yourself|yourselves|themselves)\b|\bhow\s+to\s+(commit\s+)?suicid|\bbest\s+way\s+to\s+die\b|\bslit\s+(your|my|his|her)\s+wrist", RegexOptions.IgnoreCase | RegexOptions.Compiled),
         // weapon / drug / crime instructions
         new(@"how\s+to\s+(make|build|cook|synthesize|manufacture)\s+(a\s+)?(bomb|explosive|meth|napalm|nerve\s+gas|ricin|poison|silencer|ghost\s+gun)", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-        // slurs (representative set; the model is separately instructed to avoid all of them)
-        new(@"\b(n[i1]gg(er|a)|f[a4]gg?ot|k[i1]ke|ch[i1]nk|sp[i1]c|tr[a4]nny|retard|wetback|coon)\b", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+        // (slurs are handled by the shared SlurFilter — see IsBanned below)
     };
 
     private const string RefusedToken = "REFUSED";
@@ -113,9 +113,11 @@ Then {{count}} lines, each one party prompt, no numbering, no blank lines, no co
         return new PackGenResult(PackGenOutcome.Ok, pack);
     }
 
-    // True if the text trips any banned regex (used by the post-filter and testable alone).
+    // True if the text trips the pack-specific bans (CSAM / self-harm / weapon-drug-crime)
+    // OR the shared slur wordlist. Used by the post-filter and testable alone.
     public static bool IsBanned(string text) =>
-        !string.IsNullOrEmpty(text) && Banned.Any(r => r.IsMatch(text));
+        !string.IsNullOrEmpty(text) &&
+        (SlurFilter.ContainsSlur(text) || Banned.Any(r => r.IsMatch(text)));
 
     // Parse the model's NAME: / NSFW: header + the prompt lines. Tolerant of minor
     // formatting drift (numbered lines, bullets, blank lines).

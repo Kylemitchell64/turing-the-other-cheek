@@ -68,6 +68,32 @@ public class SamplesApiTests : IClassFixture<TestAppFactory>
         Assert.Equal(10_000, created!.Text.Length);
     }
 
+    // Ordinary swearing is fine on the sample path — it saves and round-trips untouched.
+    [Fact]
+    public async Task Add_OrdinarySwearing_IsAllowed()
+    {
+        var client = await AuthedClientAsync();
+        var res = await client.PostAsJsonAsync("/api/samples", new { text = "honestly fuck this, it's such bullshit lmao" });
+        res.EnsureSuccessStatusCode();
+        var created = await res.Content.ReadFromJsonAsync<SampleDto>();
+        Assert.Equal("honestly fuck this, it's such bullshit lmao", created!.Text);
+    }
+
+    // A slur is rejected with the friendly message and nothing is stored.
+    [Fact]
+    public async Task Add_Slur_IsRejected_WithFriendlyMessage()
+    {
+        var client = await AuthedClientAsync();
+        var res = await client.PostAsJsonAsync("/api/samples", new { text = "this is how i type you f4gg0t" });
+        Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        var body = await res.Content.ReadFromJsonAsync<ErrorBody>();
+        Assert.Contains("not welcome here", body!.Error);
+
+        // Nothing persisted.
+        var list = await client.GetFromJsonAsync<List<SampleDto>>("/api/samples");
+        Assert.Empty(list!);
+    }
+
     [Fact]
     public async Task Delete_OtherUsersSample_IsNotFound()
     {
@@ -97,4 +123,5 @@ public class SamplesApiTests : IClassFixture<TestAppFactory>
 
     private record SampleDto(int Id, string Text, string Source, DateTime CreatedAt);
     private record AuthResponse(string Token, string DisplayName, string Username);
+    private record ErrorBody(string Error);
 }
