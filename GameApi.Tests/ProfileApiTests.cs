@@ -65,10 +65,10 @@ public class ProfileApiTests : IClassFixture<TestAppFactory>
     }
 
     [Theory]
-    [InlineData("{\"base\":8,\"hair\":0,\"outfit\":0,\"accessory\":0}")]   // base out of range (max 7)
-    [InlineData("{\"base\":0,\"hair\":10,\"outfit\":0,\"accessory\":0}")]  // hair out of range (max 9)
-    [InlineData("{\"base\":0,\"hair\":0,\"outfit\":10,\"accessory\":0}")]  // outfit out of range (max 9)
-    [InlineData("{\"base\":0,\"hair\":0,\"outfit\":0,\"accessory\":6}")]   // accessory out of range (max 5)
+    [InlineData("{\"base\":18,\"hair\":0,\"outfit\":0,\"accessory\":0}")]  // base out of range (max 17)
+    [InlineData("{\"base\":0,\"hair\":20,\"outfit\":0,\"accessory\":0}")]  // hair out of range (max 19)
+    [InlineData("{\"base\":0,\"hair\":0,\"outfit\":20,\"accessory\":0}")]  // outfit out of range (max 19)
+    [InlineData("{\"base\":0,\"hair\":0,\"outfit\":0,\"accessory\":16}")]  // accessory out of range (max 15)
     [InlineData("{\"base\":-1,\"hair\":0,\"outfit\":0,\"accessory\":0}")]  // negative index
     [InlineData("{\"base\":0,\"hair\":0,\"outfit\":0}")]                    // missing accessory key
     [InlineData("{\"base\":0,\"hair\":0,\"outfit\":0,\"accessory\":0,\"evil\":1}")] // unknown key

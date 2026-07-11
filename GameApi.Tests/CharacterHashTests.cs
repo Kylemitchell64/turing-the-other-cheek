@@ -25,15 +25,15 @@ public class CharacterHashTests
 
     // name -> {base, hair, outfit, accessory} from the JS configFromName.
     [Theory]
-    [InlineData("player", 0, 4, 0, 3)]
-    [InlineData("Jake", 0, 7, 4, 0)]
-    [InlineData("Emily", 1, 0, 8, 0)]
-    [InlineData("Marcus", 4, 3, 5, 5)]
-    [InlineData("Priya", 0, 5, 3, 4)]
-    [InlineData("Zoe", 1, 1, 5, 3)]
-    [InlineData("Kyle", 6, 9, 4, 3)]
-    [InlineData("aiBot42", 6, 4, 6, 3)]
-    [InlineData("Grace", 3, 1, 6, 2)]
+    [InlineData("player", 14, 4, 10, 3)]
+    [InlineData("Jake", 14, 7, 4, 0)]
+    [InlineData("Emily", 17, 0, 18, 0)]
+    [InlineData("Marcus", 4, 13, 5, 5)]
+    [InlineData("Priya", 14, 15, 3, 4)]
+    [InlineData("Zoe", 9, 11, 5, 3)]
+    [InlineData("Kyle", 2, 9, 14, 3)]
+    [InlineData("aiBot42", 0, 4, 6, 3)]
+    [InlineData("Grace", 7, 1, 16, 2)]
     public void FromName_MatchesJs(string name, int b, int hair, int outfit, int accessory)
     {
         var cfg = CharacterDefaults.FromName(name);
@@ -48,8 +48,8 @@ public class CharacterHashTests
     public void FromName_NoAccessoryCase_IsNull()
     {
         var cfg = CharacterDefaults.FromName("Tyler");
-        Assert.Equal(1, cfg.Base);
-        Assert.Equal(4, cfg.Hair);
+        Assert.Equal(7, cfg.Base);
+        Assert.Equal(14, cfg.Hair);
         Assert.Equal(1, cfg.Outfit);
         Assert.Null(cfg.Accessory);
     }

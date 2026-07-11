@@ -16,17 +16,17 @@ public record CharacterConfig(int Base, int Hair, int Outfit, int? Accessory);
 public static class CharacterDefaults
 {
     // Real ranges from sprites/config.js. Mirrored here so PUT validation can't drift.
-    public const int BaseCount = 8;      // base   0..7
-    public const int HairCount = 10;     // hair   0..9
-    public const int OutfitCount = 10;   // outfit 0..9
-    public const int AccessoryCount = 6; // accessory 0..5, or null for none
+    public const int BaseCount = 18;      // base   0..17
+    public const int HairCount = 20;      // hair   0..19
+    public const int OutfitCount = 20;    // outfit 0..19
+    public const int AccessoryCount = 16; // accessory 0..15, or null for none
 
     // The free set everyone can save without a reward. Outfits/accessories above these are
     // "premium" — an admin grants an "outfit:<id>" / "accessory:<id>" reward (phase 18) to
     // unlock saving that specific id in the creator. Bases + hair are always free.
     // Name-hash defaults ignore this gate entirely (a derived look is never "saved").
-    public const int FreeOutfitCount = 6;    // outfits 0..5 free, 6..9 reward-locked
-    public const int FreeAccessoryCount = 3; // accessories 0..2 free, 3..5 reward-locked
+    public const int FreeOutfitCount = 15;    // outfits 0..14 free, 15..19 reward-locked
+    public const int FreeAccessoryCount = 11; // accessories 0..10 free, 11..15 reward-locked
 
     public static bool IsOutfitFree(int index) => index >= 0 && index < FreeOutfitCount;
     public static bool IsAccessoryFree(int? index) =>

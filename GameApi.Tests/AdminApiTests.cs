@@ -73,9 +73,9 @@ public class AdminApiTests : IClassFixture<AdminAppFactory>
         Assert.Equal(HttpStatusCode.Forbidden,
             (await client.PostAsync("/api/admin/wipe", Json(new { confirm = "WIPE EVERYTHING" }))).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
-            (await client.PostAsync($"/api/admin/users/{uid}/rewards", Json(new { kind = "outfit:7" }))).StatusCode);
+            (await client.PostAsync($"/api/admin/users/{uid}/rewards", Json(new { kind = "outfit:17" }))).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
-            (await client.DeleteAsync($"/api/admin/users/{uid}/rewards?kind=outfit:7")).StatusCode);
+            (await client.DeleteAsync($"/api/admin/users/{uid}/rewards?kind=outfit:17")).StatusCode);
 
         // Anonymous is a 401, not a 403.
         var anon = _factory.CreateClient();
@@ -138,15 +138,15 @@ public class AdminApiTests : IClassFixture<AdminAppFactory>
         var (_, otherToken) = await SeedUserAsync();
         var admin = AuthedClient(adminToken);
 
-        const string premium = "{\"base\":1,\"hair\":1,\"outfit\":7,\"accessory\":null}";
+        const string premium = "{\"base\":1,\"hair\":1,\"outfit\":17,\"accessory\":null}";
 
-        // Before the grant, even the target can't save outfit 7.
+        // Before the grant, even the target can't save outfit 17.
         Assert.Equal(HttpStatusCode.BadRequest, (await PutCharacter(targetToken, premium)).StatusCode);
 
-        var grant = await admin.PostAsync($"/api/admin/users/{targetId}/rewards", Json(new { kind = "outfit:7" }));
+        var grant = await admin.PostAsync($"/api/admin/users/{targetId}/rewards", Json(new { kind = "outfit:17" }));
         grant.EnsureSuccessStatusCode();
         using var granted = JsonDocument.Parse(await grant.Content.ReadAsStringAsync());
-        Assert.Contains(7, granted.RootElement.GetProperty("outfits").EnumerateArray().Select(e => e.GetInt32()));
+        Assert.Contains(17, granted.RootElement.GetProperty("outfits").EnumerateArray().Select(e => e.GetInt32()));
 
         // Now the recipient can save it; a different user still can't.
         Assert.Equal(HttpStatusCode.OK, (await PutCharacter(targetToken, premium)).StatusCode);

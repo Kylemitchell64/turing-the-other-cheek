@@ -3,16 +3,16 @@
 // the AI, automatically, from its fake name. Same name in => same character out, so
 // nothing about the derivation singles the AI out.
 
-export const BASE_COUNT = 8;
-export const HAIR_COUNT = 10;
-export const OUTFIT_COUNT = 10;
-export const ACCESSORY_COUNT = 6; // 0..5, plus null for "none"
+export const BASE_COUNT = 18;
+export const HAIR_COUNT = 20;
+export const OUTFIT_COUNT = 20;
+export const ACCESSORY_COUNT = 16; // 0..15, plus null for "none"
 
 // The free set everyone can save without a reward — mirrors CharacterDefaults on the server.
-// Outfits 6..9 and accessories 3..5 are "premium": reward-locked in the creator, and the
+// Outfits 15..19 and accessories 11..15 are "premium": reward-locked in the creator, and the
 // server's PUT /profile/character revalidates the same gate. Kept in sync by CharacterHashTests.
-export const FREE_OUTFIT_COUNT = 6;
-export const FREE_ACCESSORY_COUNT = 3;
+export const FREE_OUTFIT_COUNT = 15;
+export const FREE_ACCESSORY_COUNT = 11;
 
 // FNV-1a — small, fast, stable across browsers (no crypto needed here).
 function hashName(name) {
