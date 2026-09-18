@@ -39,7 +39,7 @@ export default function GamePage() {
   const { user } = useAuth();
   const {
     roster, phase, round, reveal, reverseReveal, aiGuesses, mode, accusation, accusationMade,
-    vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, history,
+    vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended,
     tokens, clockSkew, typing, lobby, answeredRound, cheatAiName,
     leaveLobby, submitAnswer, makeAccusation, useFakeOut: sendFakeOut, startGame, startSoloGame,
     setTypingState,
@@ -50,14 +50,20 @@ export default function GamePage() {
 
   const [answer, setAnswer] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  // The answer box breathes until it's tapped (no auto-focus on phones — the keyboard
+  // would cover the podiums the moment a round starts).
+  const [inputTouched, setInputTouched] = useState(false);
   const [msg, setMsg] = useState(null);
   const [vetoed, setVetoed] = useState(false);
   const [revealFlash, setRevealFlash] = useState(false);
   const lastRoundRef = useRef(0);
-  const scrollRef = useRef(null);
 
   const myName = user?.displayName || user?.unique_name;
   const wide = useIsWide();
+  // Auto-focus the answer box only with a mouse: on a phone it would throw the keyboard
+  // over the podiums the moment a round starts.
+  const finePointer = typeof window !== "undefined" && !!window.matchMedia
+    && window.matchMedia("(hover: hover) and (pointer: fine)").matches;
 
   useEffect(() => {
     if (!roster) navigate("/", { replace: true });
@@ -69,6 +75,7 @@ export default function GamePage() {
       lastRoundRef.current = round.number;
       setAnswer("");
       setSubmitted(false);
+      setInputTouched(false);
       setVetoed(false);
       setMsg(null);
     }
@@ -79,11 +86,6 @@ export default function GamePage() {
   useEffect(() => {
     if (round && answeredRound === round.number) setSubmitted(true);
   }, [round, answeredRound]);
-
-  // Keep the chat scrollback pinned to the newest round.
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [history, phase, reveal]);
 
   // "briefly excited for all" the moment answers drop — a shared little cheer, ~1.4s.
   useEffect(() => {
@@ -145,6 +147,9 @@ export default function GamePage() {
 
   // The current round's revealed answers (for the live accuse cards), if any.
   const current = reveal;
+  // Once someone has accused this round the window is locked for everyone; players who
+  // can't veto stay on the accusing phase but must not be offered the hold buttons.
+  const accusationLocked = !!accusationMade && phase !== "prompting";
 
   // Reverse mode: which players the AI read correctly this round (their answer's author
   // matched its guess) — drives the podium reactions once the guesses land.
@@ -252,38 +257,6 @@ export default function GamePage() {
             ))}
           </div>
 
-          {/* CHAT SCROLLBACK */}
-          <div className="panel chat" ref={scrollRef}>
-            {history.length === 0 && phase === "prompting" && (
-              <p className="soon">// first prompt is up — answer below.</p>
-            )}
-            {history.map((h) => (
-              <div key={h.round} className="chat-round">
-                <div className="chat-prompt">
-                  <span className="chat-r">round {h.round}</span> {h.prompt}
-                </div>
-                {h.answers.map((a, i) => (
-                  <div key={i} className={`chat-msg${a.displayName === myName ? " mine" : ""}`}>
-                    <span className="chat-author">{a.displayName}</span>
-                    <span className="chat-text">{a.text}</span>
-                  </div>
-                ))}
-              </div>
-            ))}
-
-            {/* Live accusation banner (everyone sees who accused whom) */}
-            {accusationMade && phase !== "prompting" && (
-              <div className="chat-system">
-                {accusationMade.accuser} accused {accusationMade.accused}
-              </div>
-            )}
-            {resolved && (
-              <div className={`chat-system ${resolved.correct ? "good" : "bad"}`}>
-                {resolved.accuser} → {resolved.accused}: {resolved.correct ? "CORRECT — caught it!" : "wrong. token burned."}
-              </div>
-            )}
-          </div>
-
           {/* ACTION DOCK — prompt/answer, timer ring, accuse, veto */}
           <div className="panel dock">
             {phase === "prompting" && round && (
@@ -302,16 +275,17 @@ export default function GamePage() {
                   ) : (
                     <form className="answer-form" onSubmit={onSubmit}>
                       <input
+                        className={inputTouched ? "" : "nudge"}
                         value={answer}
                         onChange={(e) => {
                           setAnswer(e.target.value);
                           setTypingState(!!e.target.value.trim());
                         }}
-                        onFocus={() => { if (answer.trim()) setTypingState(true); }}
+                        onFocus={() => { setInputTouched(true); if (answer.trim()) setTypingState(true); }}
                         onBlur={() => setTypingState(false)}
                         maxLength={280}
                         placeholder="type something human…"
-                        autoFocus
+                        autoFocus={finePointer}
                       />
                       <div className="answer-form-foot">
                         <span className="counter">{answer.length}/280</span>
@@ -325,87 +299,81 @@ export default function GamePage() {
               </div>
             )}
 
-            {phase === "revealing" && !isReverse && (
-              <p className="soon">// answers are in. accusation window opens next…</p>
-            )}
-
             {phase === "revealing" && isReverse && (
               <ReverseReveal reverseReveal={reverseReveal} aiGuesses={aiGuesses} myName={myName} />
             )}
 
-            {phase === "accusing" && current && (
-              <div className="accuse-panel">
-                <div className="dock-row">
-                  <CountdownRing
-                    deadlineUtc={accusation?.deadlineUtc}
-                    skewMs={clockSkew}
-                    label={accusation?.priorityName ? "priority" : "accuse"}
-                  />
+            {/* Classic reveal → accuse → veto: the round's answers ARE the selection. */}
+            {!isReverse && phase !== "prompting" && current && (
+              <div className="round-panel">
+                <div className="dock-row round-head">
+                  {phase === "accusing" && (
+                    <CountdownRing
+                      deadlineUtc={accusation?.deadlineUtc}
+                      skewMs={clockSkew}
+                      label={accusation?.priorityName ? "priority" : "accuse"}
+                      size={72}
+                    />
+                  )}
+                  {phase === "veto" && (
+                    <CountdownRing deadlineUtc={vetoWindow?.deadlineUtc} skewMs={clockSkew} label="veto" size={72} />
+                  )}
                   <div className="dock-main">
+                    <div className="chat-prompt"><span className="chat-r">round {current.round}</span> {current.prompt}</div>
                     <p className="accuse-hint">
-                      {iAmEliminated
-                        ? "// you're out of tokens — answer-only."
-                        : accusation?.priorityName && !iHavePriority
-                          ? `// ${accusation.priorityName} has priority. hold on…`
-                          : myTokens <= 0
-                            ? "// no tokens left — you can't accuse."
-                            : "// spot the machine. hold to accuse."}
+                      {phase === "revealing"
+                        ? "// answers are in. accusation window opens next…"
+                        : accusationLocked && phase !== "veto"
+                          ? `// ${accusationMade.accuser} accused ${accusationMade.accused}. waiting to see if anyone vetoes…`
+                        : phase === "veto"
+                          ? vetoWindow
+                            ? vetoed ? "// fake-out sent. keeping the game alive." : `// ${accusationMade?.accuser} accused ${accusationMade?.accused}. overrule them?`
+                            : `// ${accusationMade?.accuser} accused ${accusationMade?.accused}. waiting to see if anyone vetoes…`
+                          : iAmEliminated
+                            ? "// you're out of tokens — answer-only."
+                            : accusation?.priorityName && !iHavePriority
+                              ? `// ${accusation.priorityName} has priority. hold on…`
+                              : myTokens <= 0
+                                ? "// no tokens left — you can't accuse."
+                                : "// spot the machine. hold to accuse."}
                     </p>
-                  </div>
-                </div>
-                <div className="accuse-grid">
-                  {current.answers
-                    .filter((a) => a.displayName !== myName)
-                    .map((a, i) => (
-                      <div key={i} className="accuse-card">
-                        <div className="accuse-card-head">
-                          <span className="seat-name">{a.displayName}</span>
-                          <Tokens n={tokens[a.displayName] ?? 3} />
-                        </div>
-                        <div className="accuse-card-text">{a.text}</div>
-                        <AccuseButton
-                          name={a.displayName}
-                          disabled={!canIAccuse}
-                          onConfirm={onAccuse}
-                        />
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {phase === "veto" && (
-              <div className="veto-box">
-                <div className="dock-row">
-                  <CountdownRing
-                    deadlineUtc={vetoWindow?.deadlineUtc}
-                    skewMs={clockSkew}
-                    label="veto"
-                    size={80}
-                  />
-                  <div className="dock-main">
-                    {vetoWindow ? (
-                      vetoed ? (
-                        <p className="veto-copy">// fake-out sent. keeping the game alive.</p>
-                      ) : (
-                        <>
-                          <p className="veto-copy">
-                            use a fake-out to overrule <b>{accusationMade?.accuser}</b> and keep the
-                            game going? the result stays hidden.
-                          </p>
-                          <button className="primary danger-btn" onClick={onVeto}>
-                            spend a token — FAKE-OUT
-                          </button>
-                        </>
-                      )
-                    ) : (
-                      <p className="veto-copy">
-                        // {accusationMade?.accuser} accused {accusationMade?.accused}. waiting to see
-                        if anyone vetoes…
-                      </p>
+                    {phase === "veto" && vetoWindow && !vetoed && (
+                      <button className="primary danger-btn veto-btn" onClick={onVeto}>
+                        spend a token — FAKE-OUT
+                      </button>
                     )}
                   </div>
                 </div>
+
+                <div className="answers-list">
+                  {current.answers.map((a, i) => {
+                    const mine = a.displayName === myName;
+                    const blank = a.text === "(no answer)";
+                    const accused = accusationMade && a.displayName === accusationMade.accused;
+                    const cls = ["answer-card", mine ? "mine" : "", accused ? "accused" : "", blank ? "blank" : ""].join(" ").trim();
+                    return (
+                      <div key={i} className={cls}>
+                        <div className="answer-card-head">
+                          <span className="seat-name">{a.displayName}{mine ? " (you)" : ""}</span>
+                          <Tokens n={tokens[a.displayName] ?? 3} />
+                        </div>
+                        <div className="answer-card-text">{blank ? "(no answer — half a token)" : a.text}</div>
+                        {phase === "accusing" && !mine && !accusationLocked && (
+                          <AccuseButton name={a.displayName} disabled={!canIAccuse} onConfirm={onAccuse} />
+                        )}
+                        {accused && phase !== "accusing" && (
+                          <div className="answer-tag">accused by {accusationMade.accuser}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {resolved && (
+                  <div className={`chat-system ${resolved.correct ? "good" : "bad"}`}>
+                    {resolved.accuser} → {resolved.accused}: {resolved.correct ? "CORRECT — caught it!" : "wrong. token burned."}
+                  </div>
+                )}
               </div>
             )}
 
@@ -480,6 +448,7 @@ function ReverseReveal({ reverseReveal, aiGuesses, myName }) {
 // End screen: winner banner, AI reveal, transcript with the AI's lines highlighted,
 // this player's stat deltas, and a rematch button (host restarts the same lobby).
 function EndScreen({ ended, myName, roster, iWasFooled, onRematch, onLeave, msg }) {
+  const [showAll, setShowAll] = useState(false);
   const reverseEnd = ended.winType === "AiGuesser" || ended.winType === "HumansHidden";
   const detector = ended.winType === "Detector";
   const iWon = detector && ended.winnerName === myName;
@@ -504,16 +473,20 @@ function EndScreen({ ended, myName, roster, iWasFooled, onRematch, onLeave, msg 
           </p>
         </div>
 
-        <h3 className="section">the whole transcript</h3>
-        <div className="transcript">
-          {ended.fullTranscript.map((m, i) => (
-            <div key={i} className="line">
-              <span className="ln-round">r{m.round}</span>
-              <span className="ln-name">{m.displayName}</span>
-              <span className="ln-text">{m.text}</span>
-            </div>
-          ))}
-        </div>
+        <button type="button" className="ghost transcript-toggle" onClick={() => setShowAll((v) => !v)} aria-expanded={showAll}>
+          {showAll ? "hide the answers" : "see every answer"}
+        </button>
+        {showAll && (
+          <div className="transcript">
+            {ended.fullTranscript.map((m, i) => (
+              <div key={i} className="line">
+                <span className="ln-round">r{m.round}</span>
+                <span className="ln-name">{m.displayName}</span>
+                <span className="ln-text">{m.text}</span>
+              </div>
+            ))}
+          </div>
+        )}
 
         <EndRecap ended={ended} myName={myName} />
 
@@ -566,16 +539,20 @@ function EndScreen({ ended, myName, roster, iWasFooled, onRematch, onLeave, msg 
 
       <EndRecap ended={ended} myName={myName} />
 
-      <h3 className="section">the whole transcript — its lines glow red</h3>
-      <div className="transcript">
-        {ended.fullTranscript.map((m, i) => (
-          <div key={i} className={m.isAi ? "line ai" : "line"}>
-            <span className="ln-round">r{m.round}</span>
-            <span className="ln-name">{m.displayName}</span>
-            <span className="ln-text">{m.text}</span>
-          </div>
-        ))}
-      </div>
+      <button type="button" className="ghost transcript-toggle" onClick={() => setShowAll((v) => !v)} aria-expanded={showAll}>
+        {showAll ? "hide the answers" : "see every answer — the AI's lines glow red"}
+      </button>
+      {showAll && (
+        <div className="transcript">
+          {ended.fullTranscript.map((m, i) => (
+            <div key={i} className={m.isAi ? "line ai" : "line"}>
+              <span className="ln-round">r{m.round}</span>
+              <span className="ln-name">{m.displayName}</span>
+              <span className="ln-text">{m.text}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <h3 className="section">your stat deltas</h3>
       <div className="reveal-box small">

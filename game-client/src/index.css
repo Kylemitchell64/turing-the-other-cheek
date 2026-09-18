@@ -78,7 +78,8 @@ body::after {
   min-height: 100vh;
   max-width: 480px;
   margin: 0 auto;
-  padding: 1.25rem;
+  /* bottom room for the fixed mascot band + music button so they never sit on the last panel */
+  padding: 1.25rem 1.25rem 130px;
   display: flex;
   flex-direction: column;
   gap: 1rem;
@@ -475,7 +476,21 @@ button.danger-btn {
   background: var(--danger);
   color: #170406;
   width: 100%;
+  /* a full button in its own right — before, it only looked right stacked on .primary,
+     and bare uses (admin) rendered as a thin red bar in the browser's default font */
+  font-family: inherit;
+  font-weight: bold;
+  font-size: 0.9rem;
+  letter-spacing: 1px;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  cursor: pointer;
+  line-height: 1.2;
 }
+button.danger-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* every button speaks the terminal font, whatever class it has */
+button, select, input, textarea { font-family: inherit; }
 
 .reveal-box {
   margin: 0.75rem 0;
@@ -1484,24 +1499,14 @@ button.about-toggle {
 
   /* --- GAME: head + podiums + action dock left, chat scrollback right --- */
   .game-grid {
-    display: grid;
-    grid-template-columns: 1.05fr 0.95fr;
-    grid-template-rows: auto auto 1fr;
-    grid-template-areas:
-      "head chat"
-      "pod  chat"
-      "dock chat";
-    gap: 1rem 1.5rem;
-    align-items: start;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-width: 860px;
+    margin: 0 auto;
+    width: 100%;
   }
-  .game-grid > .crt-head { grid-area: head; }
-  .game-grid > .podium-row { grid-area: pod; }
-  .game-grid > .panel.dock { grid-area: dock; }
-  .game-grid > .panel.chat {
-    grid-area: chat;
-    align-self: stretch;
-    max-height: 68vh;
-  }
+  .answers-list { grid-template-columns: 1fr 1fr; }
   .podium-row { padding: 1rem 0.75rem 0.6rem; gap: 0.6rem 0.9rem; }
 
   /* two-up transcript columns have room to breathe on the end screen */
@@ -1766,7 +1771,7 @@ button.au-grant-btn { padding: 0.25rem 0.55rem; font-size: 0.85rem; line-height:
 .ops-msg { min-height: 60px; }
 .ops-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .ops-actions button { flex: 0 0 auto; width: auto; }
-button.ops-pause { padding: 0.55rem 1rem; }
+button.ops-pause { padding: 0.55rem 1rem; width: auto; }
 
 /* danger zone */
 .danger-zone { margin-top: 1rem; }
@@ -2067,8 +2072,9 @@ button.ops-pause { padding: 0.55rem 1rem; }
    its own 120px band — lift the whole layer above the page content (mobile AND desktop) */
 .home-robot.active { overflow: visible; z-index: 60; opacity: 1; }
 .screen > .home-robot.active { z-index: 60; }
-.home-robot-walker.grabbable { pointer-events: auto; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
-.home-robot-walker.grabbing { cursor: grabbing; }
+/* the sprite never takes pointer events itself (document-level hit test, see MenuWanderer) */
+.home-robot-walker.grabbable { pointer-events: none; user-select: none; -webkit-user-select: none; }
+.home-robot-walker.grabbing { cursor: grabbing; transition: none; }
 .home-robot-walker.grabbable .wanderer-body { transition: filter 0.3s; }
 
 /* what it mutters, floating above its head */
@@ -2274,7 +2280,7 @@ button.ops-pause { padding: 0.55rem 1rem; }
 .cl-confirm .danger-btn { width: auto; }
 
 .cheat-list { display: flex; flex-direction: column; gap: 0.5rem; }
-.cheat-row { display: flex; gap: 0.8rem; align-items: center; text-align: left; width: 100%; padding: 0.6rem 0.7rem; background: #060a08; border: 1px solid var(--neon-dim); border-radius: 8px; color: var(--text); cursor: pointer; }
+.cheat-row { display: flex; gap: 0.8rem; align-items: center; text-align: left; width: 100%; padding: 0.6rem 0.7rem; background: #060a08; border: 1px solid var(--neon-dim); border-radius: 8px; color: var(--text); cursor: pointer; font-family: inherit; }
 .cheat-row.on { border-color: #ffb300; box-shadow: 0 0 10px rgba(255, 179, 0, 0.25); }
 .cheat-switch { flex: 0 0 44px; text-align: center; font-size: 0.66rem; letter-spacing: 1px; padding: 0.25rem 0; border: 1px solid var(--neon-dim); border-radius: 999px; color: var(--muted); }
 .cheat-row.on .cheat-switch { color: #050805; background: #ffb300; border-color: #ffb300; font-weight: bold; }
@@ -2290,3 +2296,46 @@ button.ops-pause { padding: 0.55rem 1rem; }
   .sc-step { grid-template-columns: 12px 220px 1fr auto; grid-template-areas: "dot label detail status"; }
   .sc-status { justify-self: end; }
 }
+
+
+/* ---- phase 31: join panel + scanner, about glow ---- */
+.join-panel { display: flex; flex-direction: column; gap: 0.7rem; }
+.join-title { margin: 0; color: var(--neon); letter-spacing: 2px; font-size: 0.95rem; text-shadow: 0 0 8px rgba(51, 255, 102, 0.4); }
+.join-form { flex-direction: row; gap: 0.5rem; align-items: stretch; }
+.join-form input { flex: 1 1 auto; min-width: 0; text-align: center; letter-spacing: 4px; font-size: 1.2rem; text-transform: uppercase; }
+.join-form input::placeholder { letter-spacing: 2px; font-size: 0.95rem; }
+.join-form .primary { flex: 0 0 auto; width: auto; padding: 0.8rem 1.4rem; }
+.join-or { text-align: center; color: var(--muted); font-size: 0.72rem; letter-spacing: 2px; }
+.scan-modal { display: flex; flex-direction: column; gap: 0.7rem; align-items: stretch; }
+.scan-video { width: 100%; max-height: 60vh; border-radius: 10px; border: 1px solid var(--neon); background: #000; object-fit: cover; }
+
+.about-toggle.unseen { animation: about-breathe 2.6s ease-in-out infinite; }
+@keyframes about-breathe {
+  0%, 100% { box-shadow: 0 0 0 rgba(51, 255, 102, 0); border-color: var(--neon-dim); }
+  50% { box-shadow: 0 0 18px rgba(51, 255, 102, 0.45); border-color: var(--neon); }
+}
+@media (prefers-reduced-motion: reduce) { .about-toggle.unseen { animation: none; border-color: var(--neon); } }
+
+
+/* ---- phase 31: the round's answers ARE the accuse list ---- */
+.round-panel { display: flex; flex-direction: column; gap: 0.7rem; }
+.round-head .dock-main { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
+.round-head .chat-prompt { margin: 0; }
+.veto-btn { width: auto; align-self: flex-start; }
+.answers-list { display: grid; grid-template-columns: 1fr; gap: 0.5rem; }
+.answer-card {
+  display: flex; flex-direction: column; gap: 0.4rem; min-width: 0;
+  padding: 0.6rem 0.7rem; border: 1px solid var(--neon-dim); border-radius: 8px; background: #060a08;
+}
+.answer-card.mine { border-color: var(--neon); box-shadow: 0 0 10px rgba(51, 255, 102, 0.18); }
+.answer-card.accused { border-color: #ffb300; }
+.answer-card.blank .answer-card-text { color: var(--muted); font-style: italic; }
+.answer-card-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.answer-card-head .seat-name { color: var(--neon); font-weight: bold; letter-spacing: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.answer-card-text { color: var(--text); font-size: 0.92rem; line-height: 1.45; word-break: break-word; }
+.answer-tag { font-size: 0.68rem; letter-spacing: 1px; color: #ffb300; }
+.transcript-toggle { align-self: stretch; }
+
+/* the untouched answer box breathes so a phone player knows to tap it (no auto-focus) */
+.answer-form input.nudge { animation: about-breathe 2.2s ease-in-out infinite; }
+@media (hover: hover) and (pointer: fine) { .answer-form input.nudge { animation: none; } }

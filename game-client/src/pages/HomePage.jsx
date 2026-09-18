@@ -5,6 +5,7 @@ import { useLobby } from "../game/LobbyContext";
 import MaintenanceBanner from "../components/MaintenanceBanner";
 import CrewsPanel from "../components/CrewsPanel";
 import MenuWanderer from "../components/MenuWanderer";
+import JoinPanel from "../components/JoinPanel";
 
 export default function HomePage() {
   const { user, logout } = useAuth();
@@ -30,6 +31,10 @@ export default function HomePage() {
       setBusy(false);
     }
   };
+
+  // "[ WHAT IS THIS? ]" breathes until it's been opened once on this device.
+  const [aboutSeen, setAboutSeen] = useState(() => { try { return localStorage.getItem("aboutSeen") === "1"; } catch { return true; } });
+  const markAboutSeen = () => { setAboutSeen(true); try { localStorage.setItem("aboutSeen", "1"); } catch { /* ignore */ } };
 
   const onCreate = async () => {
     setErr(null);
@@ -87,7 +92,7 @@ export default function HomePage() {
               {busy ? "..." : "create lobby"}
             </button>
             <button className="ghost" onClick={() => { setJoining(true); setErr(null); }} disabled={busy}>
-              join by code
+              join
             </button>
             <button className="ghost solo-btn" onClick={onSolo} disabled={busy}>
               solo demo <span className="seg-rec">[vs bots]</span>
@@ -97,23 +102,16 @@ export default function HomePage() {
             <button className="ghost" onClick={() => navigate("/samples")} disabled={busy}>writing samples</button>
           </div>
         ) : (
-          <form className="form" onSubmit={onJoin}>
-            <input
-              type="text"
-              placeholder="join code"
-              value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase())}
-              maxLength={5}
-              autoCapitalize="characters"
-              autoFocus
-            />
-            <button type="submit" className="primary" disabled={busy || code.length !== 5}>
-              {busy ? "..." : "join"}
-            </button>
-            <button type="button" className="ghost" onClick={() => { setJoining(false); setCode(""); setErr(null); }}>
-              back
-            </button>
-          </form>
+          <JoinPanel
+            busy={busy}
+            error={err}
+            onJoin={async (c) => {
+              setErr(null); setBusy(true);
+              try { await joinLobby(c); navigate("/lobby"); }
+              catch (e) { setErr(e.message || "Couldn't join"); setBusy(false); }
+            }}
+            onBack={() => { setJoining(false); setCode(""); setErr(null); }}
+          />
         )}
       </div>
 
@@ -123,8 +121,8 @@ export default function HomePage() {
       <div className="panel about">
         <button
           type="button"
-          className="about-toggle"
-          onClick={() => setShowAbout((s) => !s)}
+          className={`about-toggle${aboutSeen ? "" : " unseen"}`}
+          onClick={() => { setShowAbout((s) => !s); markAboutSeen(); }}
           aria-expanded={showAbout}
         >
           [ WHAT IS THIS? ] <span className="about-caret">{showAbout ? "−" : "+"}</span>

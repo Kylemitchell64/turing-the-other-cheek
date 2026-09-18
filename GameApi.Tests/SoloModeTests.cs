@@ -68,6 +68,8 @@ public class SoloModeTests : IClassFixture<TestAppFactory>
         var rounds = new HashSet<int>();
         var fakeOuts = new List<string>();
         var accusations = new List<(string, string)>();
+        var tokenChanges = new List<(string, int, string)>();
+        conn.On<string, int, string>("TokensChanged", (n, t, r) => tokenChanges.Add((n, t, r)));
         conn.On<LobbyState>("LobbyUpdated", s => lobby = s);
         conn.On<string, int, DateTime>("PromptStarted", (_, n, _) => rounds.Add(n));
         conn.On<string, string>("AccusationMade", (a, b) => accusations.Add((a, b)));
@@ -100,6 +102,11 @@ public class SoloModeTests : IClassFixture<TestAppFactory>
         Assert.True(ended.Accusations.Count <= 2);
         Assert.Equal(ended.Accusations.Count, accusations.Count);
         Assert.Equal(ended.Accusations.Count, fakeOuts.Count);
+        // the idle human blanked all 5 rounds: half a token each → 2 tokens gone (after r2, r4)
+        Assert.Equal(2, tokenChanges.Count);
+        Assert.All(tokenChanges, c => { Assert.Equal("Loner2", c.Item1); Assert.Equal("no answer", c.Item3); });
+        Assert.Equal(new[] { 2, 1 }, tokenChanges.Select(c => c.Item2).ToArray());
+
         // 5 rounds x 5 seats of transcript, the AI's lines flagged only here
         Assert.Equal(25, ended.FullTranscript.Count);
         Assert.Equal(5, ended.FullTranscript.Count(m => m.IsAi));

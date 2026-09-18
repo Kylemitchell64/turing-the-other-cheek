@@ -534,10 +534,22 @@ public class GameEngine : BackgroundService
         }
 
         // Anyone who didn't answer (including the AI, if its delay somehow lapsed)
-        // gets a blank so the reveal has an entry for every seat.
+        // gets a blank so the reveal has an entry for every seat. A blank costs a human
+        // half a token (phase 31): every second strike takes one, broadcast as TokensChanged.
         EnsureAnswerFor(lobby, lobby.AiDisplayName!, isAi: true);
         foreach (var p in lobby.Players)
+        {
+            if (lobby.Answers.ContainsKey(p.DisplayName)) continue;
             EnsureAnswerFor(lobby, p.DisplayName, isAi: false, authorUserId: p.UserId);
+            if (p.IsBot) continue;
+            p.NoAnswerStrikes++;
+            if (p.NoAnswerStrikes % 2 == 0 && p.TokensRemaining > 0)
+            {
+                p.TokensRemaining--;
+                var name = p.DisplayName; var left = p.TokensRemaining; var codeT = lobby.Code;
+                outbound.Add(() => _hub.Clients.Group(codeT).SendAsync("TokensChanged", name, left, "no answer"));
+            }
+        }
 
         lobby.State = GameState.Revealing;
         lobby.PhaseDeadlineUtc = DateTime.UtcNow + TimingsFor(lobby).Reveal;

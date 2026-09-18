@@ -55,7 +55,9 @@ test('solo demo plays five rounds against bots and ends on the recap', async ({ 
   await expect(page.locator('.recap-rounds .recap-row')).toHaveCount(5);
   await expect(page.getByText(/solo demo — nothing saved/).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "share result" })).toBeVisible();
-  // bots + the AI answer every round; only the idle human blanks r2-r5
+  // the transcript is collapsed by default; expand it. bots + the AI answer every round;
+  // only the idle human blanks r2-r5
+  await page.getByRole('button', { name: /see every answer/ }).click();
   await expect(page.locator(".line", { hasText: "(no answer)" })).toHaveCount(4);
   await page.screenshot({ path: 'test-results/solo-recap.png', fullPage: true });
 });

@@ -347,7 +347,6 @@ export default function MenuWanderer() {
   const onPointerDown = (e) => {
     if (reduced || mode.current !== "idle") return;
     e.preventDefault();
-    try { walkerRef.current?.setPointerCapture?.(e.pointerId); } catch { /* synthetic / already-released pointer */ }
     drag.current = { id: e.pointerId, x0: e.clientX, y0: e.clientY, moved: false, startPos: pose.pos };
   };
   const onPointerMove = (e) => {
@@ -361,13 +360,22 @@ export default function MenuWanderer() {
       mode.current = "held";
       setHeld(true);
       sfxBus.emit("grab");
-      phys.current.gravity = false;
-      phys.current.velY = 0;
+      // Stop any in-flight spring/gravity frame loop: while held, the pointer owns the
+      // position outright. (Leaving it running made the spring pull the sprite back
+      // toward the floor between pointer events — the "drifts away from your finger" lag.)
+      const p0 = phys.current;
+      if (p0.raf) { cancelAnimationFrame(p0.raf); p0.raf = 0; }
+      p0.gravity = false;
+      p0.velY = 0;
+      p0.squash = 0;
       setPose((q) => ({ ...q, walking: false, look: 0 }));
     }
     const vw = window.innerWidth || 1;
     const pos = clamp(d.startPos + (dx / vw) * 100, -4, 92);
-    setPose((q) => ({ ...q, pos }));
+    // Write straight to the DOM (no React render, no CSS transition) so it tracks the
+    // finger frame-for-frame; the state catches up on release.
+    d.pos = pos;
+    if (walkerRef.current) walkerRef.current.style.left = `${pos}%`;
     const p = phys.current;
     p.offY = Math.min(0, dy - 4); // lifted straight up under the pointer
     p.rot = -clamp(dx * 0.08, -14, 14);
@@ -377,10 +385,10 @@ export default function MenuWanderer() {
     const d = drag.current;
     if (!d || d.id !== e.pointerId) return;
     drag.current = null;
-    try { walkerRef.current?.releasePointerCapture?.(e.pointerId); } catch { /* ditto */ }
     if (!d.moved) { nudge(e.clientX); return; }
     // dropped: fall to the floor, land with a squash, then count it as a nudge. It stays
     // "dropping" (layer lifted above the panels) until it actually touches down.
+    if (typeof d.pos === "number") setPose((q) => ({ ...q, pos: d.pos }));
     setHeld(false);
     setDropping(true);
     const p = phys.current;
@@ -425,16 +433,49 @@ export default function MenuWanderer() {
 
   const interactive = !reduced;
 
+  // Input is wired at the DOCUMENT level, not on the sprite (phase 31). The sprite itself
+  // takes no pointer events, so it can never sit between a finger and a button: a tap is
+  // handed to it only when it lands inside the sprite's box AND nothing interactive is
+  // underneath. While a drag is live, touch scrolling is suppressed so the page doesn't
+  // pan under the finger.
+  const handlersRef = useRef(null);
+  handlersRef.current = { onPointerDown, onPointerMove, onPointerUp };
+  useEffect(() => {
+    if (!interactive) return;
+    const INTERACTIVE = 'button, a, input, textarea, select, label, [role="button"], .modal-backdrop, .music-widget';
+    const down = (e) => {
+      if (drag.current || !e.isPrimary) return;
+      const w = walkerRef.current;
+      if (!w) return;
+      const r = w.getBoundingClientRect();
+      if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
+      const under = document.elementFromPoint(e.clientX, e.clientY);
+      if (under && under.closest(INTERACTIVE)) return;
+      handlersRef.current.onPointerDown(e);
+    };
+    const move = (e) => { if (drag.current) handlersRef.current.onPointerMove(e); };
+    const up = (e) => { if (drag.current) handlersRef.current.onPointerUp(e); };
+    const noScroll = (e) => { if (drag.current) e.preventDefault(); };
+    document.addEventListener("pointerdown", down);
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+    document.addEventListener("pointercancel", up);
+    document.addEventListener("touchmove", noScroll, { passive: false });
+    return () => {
+      document.removeEventListener("pointerdown", down);
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      document.removeEventListener("pointercancel", up);
+      document.removeEventListener("touchmove", noScroll);
+    };
+  }, [interactive]);
+
   return (
     <div className={`home-robot${crashStage ? " crashing" : ""}${held || dropping || crashStage ? " active" : ""}`} aria-hidden="true">
       <div
         className={`home-robot-walker${interactive ? " grabbable" : ""}${held ? " grabbing" : ""}`}
         style={style}
         ref={walkerRef}
-        onPointerDown={interactive ? onPointerDown : undefined}
-        onPointerMove={interactive ? onPointerMove : undefined}
-        onPointerUp={interactive ? onPointerUp : undefined}
-        onPointerCancel={interactive ? onPointerUp : undefined}
       >
         <div className={bodyClass} ref={bodyRef}>
           {character ? (

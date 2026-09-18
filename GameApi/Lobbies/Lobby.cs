@@ -247,6 +247,7 @@ public class Lobby
         foreach (var p in Players)
         {
             p.TokensRemaining = 3;
+            p.NoAnswerStrikes = 0;
             p.IsEliminated = false;
             p.VetoerCount = 0;
             p.TimesReadByAi = 0;
@@ -310,6 +311,9 @@ public class LobbyPlayer
     public HashSet<string> ConnectionIds { get; } = new();
 
     public int TokensRemaining { get; set; } = 3;
+
+    // Phase 31: blank rounds. Every second "(no answer)" costs a token (half a token each).
+    public int NoAnswerStrikes { get; set; }
 
     // Accusation-eliminated: a wrong accusation at 0 tokens. They still see the game
     // and answer prompts, but can't accuse OR veto (answer-only). Spec's rule.

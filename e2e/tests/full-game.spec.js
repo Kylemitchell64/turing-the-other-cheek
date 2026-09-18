@@ -42,17 +42,19 @@ async function answerCurrentRound(pages, roundNum) {
   );
 }
 
-// Read the revealed answers for a round off the chat scrollback, assert all five roster
-// names (four guests + the AI) are present, and return the AI's fake name.
+// Read the revealed answers for the current round off the round panel (the answers list
+// doubles as the accuse selection), assert all five roster names (four guests + the AI)
+// are present, and return the AI's fake name.
 async function revealNamesIncludeAi(page, roundNum) {
-  const roundBlock = page.locator('.chat-round', {
+  const roundBlock = page.locator('.round-panel', {
     has: page.locator('.chat-r', { hasText: `round ${roundNum}` }),
   });
   await expect
-    .poll(async () => roundBlock.locator('.chat-author').count(), { timeout: 40_000 })
+    .poll(async () => roundBlock.locator('.answer-card .seat-name').count(), { timeout: 40_000 })
     .toBeGreaterThanOrEqual(5);
 
-  const names = (await roundBlock.locator('.chat-author').allInnerTexts()).map((s) => s.trim());
+  const names = (await roundBlock.locator('.answer-card .seat-name').allInnerTexts())
+    .map((s) => s.replace(/\s*\(you\)\s*$/, '').trim());
   const unique = [...new Set(names)];
   expect(unique, `round ${roundNum} reveal should show exactly five names`).toHaveLength(5);
 
@@ -105,8 +107,8 @@ test('four guests play a full game to a detector win', async ({ browser }) => {
 
     // 3) The other three join by code.
     for (let i = 1; i < pages.length; i++) {
-      await pages[i].getByRole('button', { name: 'join by code' }).click();
-      await pages[i].getByPlaceholder('join code').fill(code);
+      await pages[i].getByRole('button', { name: 'join', exact: true }).click();
+      await pages[i].getByLabel('lobby code').fill(code);
       await pages[i].getByRole('button', { name: 'join', exact: true }).click();
       await expect(pages[i]).toHaveURL(/\/lobby$/);
     }

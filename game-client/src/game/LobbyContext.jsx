@@ -239,6 +239,13 @@ export function LobbyProvider({ children }) {
         log(`resolved: ${accuser} → ${accused} was ${correct ? "CORRECT" : "wrong"}`);
       });
 
+      // Phase 31: server-driven token changes that aren't implied by another event (today:
+      // the no-answer penalty — every second blank round costs a token).
+      conn.on("TokensChanged", (name, remaining, reason) => {
+        setTokens((prev) => ({ ...prev, [name]: remaining }));
+        log(`${name}: ${remaining} token${remaining === 1 ? "" : "s"} (${reason})`);
+      });
+
       conn.on("PlayerEliminated", (name) => {
         setEliminated((prev) => (prev.includes(name) ? prev : [...prev, name]));
         setTokens((prev) => ({ ...prev, [name]: 0 }));
