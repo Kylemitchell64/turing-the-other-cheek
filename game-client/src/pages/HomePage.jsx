@@ -8,7 +8,7 @@ import MenuWanderer from "../components/MenuWanderer";
 
 export default function HomePage() {
   const { user, logout } = useAuth();
-  const { createLobby, joinLobby } = useLobby();
+  const { createLobby, joinLobby, playSolo } = useLobby();
   const navigate = useNavigate();
 
   const [joining, setJoining] = useState(false);
@@ -16,6 +16,20 @@ export default function HomePage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [showAbout, setShowAbout] = useState(false);
+
+  // Solo demo (phase 29): nobody around? play one round of the real thing against three
+  // bot stand-ins + the AI. Creates the lobby and starts it in one go.
+  const onSolo = async () => {
+    setErr(null);
+    setBusy(true);
+    try {
+      await playSolo();
+      navigate("/game");
+    } catch (e) {
+      setErr(e.message || "Couldn't start a solo demo");
+      setBusy(false);
+    }
+  };
 
   const onCreate = async () => {
     setErr(null);
@@ -74,6 +88,9 @@ export default function HomePage() {
             </button>
             <button className="ghost" onClick={() => { setJoining(true); setErr(null); }} disabled={busy}>
               join by code
+            </button>
+            <button className="ghost solo-btn" onClick={onSolo} disabled={busy}>
+              solo demo <span className="seg-rec">[vs bots]</span>
             </button>
             <button className="ghost" onClick={() => navigate("/character", { state: { edit: true } })} disabled={busy}>edit character</button>
             <button className="ghost" onClick={() => navigate("/stats")} disabled={busy}>my stats</button>

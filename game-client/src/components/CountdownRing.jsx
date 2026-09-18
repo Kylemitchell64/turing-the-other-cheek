@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useMusic } from "../audio/MusicContext";
 
 // Animated countdown ring driven by a server UTC deadline (not a client-started
 // timer). `skewMs` is the estimated client-minus-server clock offset — we subtract it
@@ -7,6 +8,8 @@ import { useEffect, useRef, useState } from "react";
 export default function CountdownRing({ deadlineUtc, totalMs, skewMs = 0, size = 96, label }) {
   const [remaining, setRemaining] = useState(0);
   const startTotalRef = useRef(totalMs);
+  const music = useMusic();
+  const lastTickRef = useRef(null);
 
   useEffect(() => {
     if (!deadlineUtc) { setRemaining(0); return; }
@@ -31,6 +34,15 @@ export default function CountdownRing({ deadlineUtc, totalMs, skewMs = 0, size =
   const total = startTotalRef.current || 1;
   const frac = Math.max(0, Math.min(1, remaining / total));
   const secs = Math.ceil(remaining / 1000);
+
+  // Last three seconds tick (phase 29). Keyed per deadline so a re-render can't double-fire.
+  useEffect(() => {
+    if (!deadlineUtc || secs > 3 || secs <= 0) return;
+    const key = `${deadlineUtc}:${secs}`;
+    if (lastTickRef.current === key) return;
+    lastTickRef.current = key;
+    music?.sfx?.(secs === 1 ? "tickLow" : "tick");
+  }, [secs, deadlineUtc, music]);
 
   const stroke = 6;
   const r = (size - stroke) / 2;

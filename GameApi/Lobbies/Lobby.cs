@@ -64,6 +64,20 @@ public class Lobby
     // group-related field allowed over the wire — see LobbyStateDto). Null when not a crew.
     public string? CrewName { get; set; }
 
+    // Solo demo (phase 29): one human + bot stand-ins + the AI. Bots answer, never accuse.
+    // Solo games are shorter (5 rounds) and are NOT persisted — they're a demo, not a stat.
+    public bool IsSolo { get; set; }
+
+    // Which bots have had their answer task fired this round (mirror of AiAnswerRequested).
+    public HashSet<string> BotAnswerRequested { get; } = new(StringComparer.Ordinal);
+
+    // Bot lines used so far this game, so no bot repeats itself.
+    public HashSet<string> BotLinesUsed { get; } = new(StringComparer.Ordinal);
+
+    // Every accusation this game and how it went — for the end-of-game recap. "vetoed"
+    // entries never reveal correctness (the veto rule), so the recap can't leak either.
+    public List<AccusationRecord> AccusationLog { get; } = new();
+
     // The crew's rendered GROUP NOTES (built from Crew.GroupProfileJson) loaded at game
     // start and injected into the impostor's system prompt. Null on EASY or no profile yet.
     public string? GroupNotes { get; set; }
@@ -179,6 +193,9 @@ public class Lobby
         CurrentPrompt = "";
         PhaseDeadlineUtc = default;
         Answers.Clear();
+        BotAnswerRequested.Clear();
+        BotLinesUsed.Clear();
+        AccusationLog.Clear();
         RoundPrompts.Clear();
         Transcript.Clear();
         AiAnswerRequested = false;
@@ -245,10 +262,17 @@ public class RecordedAnswer
 
 // A human seat in the lobby. The AI is NOT a LobbyPlayer — it has no userId /
 // connection and only exists as a name in the roster once the game starts.
+// One accusation, for the recap. Outcome: "correct" | "wrong" | "vetoed" (+Vetoer).
+public record AccusationRecord(int Round, string Accuser, string Accused, string Outcome, string? Vetoer);
+
 public class LobbyPlayer
 {
     public string UserId { get; init; } = default!;
     public string DisplayName { get; init; } = default!;
+
+    // Solo-demo stand-in (phase 29). Answers prompts, never accuses/vetoes, never persisted.
+    // Counts as "connected" so the roster doesn't show an empty seat.
+    public bool IsBot { get; init; }
 
     // The player's saved character JSON, cached from the DB when they take a seat, so the
     // roster payloads can carry a config without a DB hit per broadcast. Null == none
@@ -271,7 +295,7 @@ public class LobbyPlayer
     // to them this game. Persisted into PlayerStats.TimesReadByAi at game end.
     public int TimesReadByAi { get; set; }
 
-    public bool IsConnected => ConnectionIds.Count > 0;
+    public bool IsConnected => IsBot || ConnectionIds.Count > 0;
 
     // Can this player still veto / be offered a veto? Needs a token and not eliminated.
     public bool CanVeto => TokensRemaining > 0 && !IsEliminated;

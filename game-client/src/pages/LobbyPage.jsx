@@ -5,6 +5,8 @@ import { useLobby } from "../game/LobbyContext";
 import { PACKS, packFor } from "../game/packs";
 import PackMakerModal from "../components/PackMakerModal";
 import MenuWanderer from "../components/MenuWanderer";
+import ReconnectBanner from "../components/ReconnectBanner";
+import QRCode from "qrcode";
 
 // Impostor difficulty + answer pace options. Keys must match the server's
 // DifficultyProfile / PaceOptions keys exactly.
@@ -32,13 +34,29 @@ const MODES = [
 export default function LobbyPage() {
   const { user } = useAuth();
   const { lobby, crewCode, roster, packKey, difficulty, paceKey, mode, customPackName,
-    setLobbyOptions, setCustomPack, startGame, leaveLobby } = useLobby();
+    setLobbyOptions, setCustomPack, startGame, startSoloGame, leaveLobby } = useLobby();
   const navigate = useNavigate();
 
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const [copied, setCopied] = useState(false);
   const [showMaker, setShowMaker] = useState(false);
+
+  // Join link + QR (phase 29): phones scan it instead of typing the code. Crew rooms keep
+  // their own persistent code flow, so no QR there. Hooks live above the early return.
+  const [qr, setQr] = useState(null);
+  const [shared, setShared] = useState(null);
+  const qrCode = lobby ? (lobby.crewName && crewCode ? crewCode : lobby.code) : null;
+  const qrIsCrew = !!lobby?.crewName;
+  useEffect(() => {
+    if (!qrCode || qrIsCrew) { setQr(null); return; }
+    let alive = true;
+    const url = `${window.location.origin}/login?join=${encodeURIComponent(qrCode)}`;
+    QRCode.toDataURL(url, { margin: 1, width: 220, color: { dark: "#33ff66", light: "#00000000" } })
+      .then((data) => { if (alive) setQr(data); })
+      .catch(() => { if (alive) setQr(null); });
+    return () => { alive = false; };
+  }, [qrCode, qrIsCrew]);
 
   // No lobby in state (e.g. hard refresh lost the socket) → back to home.
   useEffect(() => {
@@ -64,6 +82,31 @@ export default function LobbyPage() {
   // persistent code (threaded through context) instead of the ephemeral live one.
   const isCrew = !!lobby.crewName;
   const shownCode = isCrew && crewCode ? crewCode : lobby.code;
+
+  const joinUrl = `${window.location.origin}/login?join=${encodeURIComponent(shownCode)}`;
+  const shareInvite = async () => {
+    const text = `join my Turing the Other Cheek lobby — code ${shownCode}`;
+    try {
+      if (navigator.share) { await navigator.share({ title: "Turing the Other Cheek", text, url: joinUrl }); return; }
+      await navigator.clipboard.writeText(joinUrl);
+      setShared("link copied!");
+    } catch (e) {
+      if (e && e.name === "AbortError") return;
+      try { await navigator.clipboard.writeText(joinUrl); setShared("link copied!"); } catch { setShared(joinUrl); }
+    }
+    setTimeout(() => setShared(null), 1800);
+  };
+
+  const onSolo = async () => {
+    setErr(null);
+    setBusy(true);
+    try {
+      await startSoloGame();
+    } catch (e) {
+      setErr(e.message || "Couldn't start the solo demo");
+      setBusy(false);
+    }
+  };
 
   const onPickPack = async (key) => {
     if (key === packKey) return;
@@ -132,6 +175,8 @@ export default function LobbyPage() {
         <button className="ghost" onClick={onLeave}>leave</button>
       </div>
 
+      <ReconnectBanner />
+
       <div className="panel">
         <h1 className="glow">{isCrew ? `[ CREW: ${lobby.crewName} ]` : "[ LOBBY ]"}</h1>
         <p className="tagline">
@@ -149,6 +194,16 @@ export default function LobbyPage() {
         <p className="soon">
           {copied ? "copied!" : isCrew ? "// crewmates open this from their crews list" : "// tap the code to copy"}
         </p>
+        {!isCrew && (
+          <div className="invite">
+            {qr && <img className="qr" src={qr} alt={`QR code to join lobby ${shownCode}`} width={110} height={110} />}
+            <div className="invite-text">
+              <p className="soon">// scan to join, or</p>
+              <button type="button" className="ghost invite-btn" onClick={shareInvite}>share invite link</button>
+              {shared && <p className="soon">{shared}</p>}
+            </div>
+          </div>
+        )}
 
         <div className="roster">
           {lobby.players.map((p) => (
@@ -273,6 +328,11 @@ export default function LobbyPage() {
           </button>
         ) : (
           <p className="soon">// waiting for the host to start</p>
+        )}
+        {amHost && !isCrew && lobby.players.length === 1 && (
+          <button className="ghost solo-btn" onClick={onSolo} disabled={busy}>
+            nobody around? solo demo <span className="seg-rec">[vs bots]</span>
+          </button>
         )}
         </div>
         </div>

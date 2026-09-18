@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { createChiptune, MOOD_KEYS } from "./chiptune";
+import { createSfx, sfxBus } from "./sfx";
 import { useLobby } from "../game/LobbyContext";
 import { useAuth } from "../auth/AuthContext";
 
@@ -36,6 +37,9 @@ export function MusicProvider({ children }) {
   const engineRef = useRef(null);
   if (engineRef.current === null) engineRef.current = createChiptune();
   const supported = engineRef.current.isSupported();
+  // Sound effects (phase 29): separate tiny synth so they work with the music off.
+  const sfxRef = useRef(null);
+  if (sfxRef.current === null) sfxRef.current = createSfx();
 
   // Default mood is CHILL and pre-selected ON — menus should hum quietly out of the box.
   // A user who picks OFF (or another mood) has it persisted, so this default only applies to
@@ -92,7 +96,34 @@ export function MusicProvider({ children }) {
     setStarted(true);
     writeLS(LS.enabled, "true");
     if (engineRef.current) engineRef.current.start();
+    sfxRef.current?.unlock();
   }, []);
+
+  // ---- sound effects wiring (phase 29) ----
+  // Volume/mute follow the music widget; muted means muted for everything.
+  useEffect(() => { sfxRef.current?.setVolume(volume); }, [volume]);
+  useEffect(() => { sfxRef.current?.setMuted(muted); }, [muted]);
+  const sfx = useCallback((name, variant) => { sfxRef.current?.play(name, variant); }, []);
+  // Out-of-tree callers (the mascot's physics loop) go through the bus.
+  useEffect(() => sfxBus.on((n) => {
+    if (typeof n === "string") sfx(n);
+    else if (n && n.name) sfx(n.name, n.variant);
+  }), [sfx]);
+
+  // Game beats -> sounds. Each effect keys off the lobby state it reacts to.
+  const { accusationMade, fakeOut, ended, phase, round } = useLobby();
+  const meName = user?.displayName || user?.unique_name;
+  useEffect(() => { if (accusationMade) sfx("accuse"); }, [accusationMade, sfx]);
+  useEffect(() => { if (fakeOut) sfx("veto"); }, [fakeOut, sfx]);
+  useEffect(() => {
+    if (!ended) return;
+    const iWon = (ended.winType === "Detector" && ended.winnerName === meName) || ended.winType === "HumansHidden";
+    sfx(iWon ? "win" : "lose");
+  }, [ended, meName, sfx]);
+  useEffect(() => {
+    if (phase === "prompting" && round) sfx("prompt");
+    else if (phase === "revealing") sfx("reveal");
+  }, [phase, round, sfx]);
 
   // Music is on by default (phase 27): browsers forbid audio before a gesture, so the closest
   // legal thing to autoplay is to start on the user's FIRST interaction anywhere on the page
@@ -138,6 +169,7 @@ export function MusicProvider({ children }) {
     followHost, toggleFollowHost,
     started, enable,
     inLobby, amHost, hostMood, effectiveMood,
+    sfx,
   };
 
   return <MusicContext.Provider value={value}>{children}</MusicContext.Provider>;

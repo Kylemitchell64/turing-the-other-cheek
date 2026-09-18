@@ -16,7 +16,11 @@ export default function LoginPage() {
   const navigate = useNavigate();
 
   const [guestName, setGuestName] = useState("");
-  const [guestCode, setGuestCode] = useState("");
+  // A scanned QR / shared link lands here as /login?join=CODE — prefill it (phase 29).
+  const [guestCode, setGuestCode] = useState(() => {
+    try { return (new URLSearchParams(window.location.search).get("join") || "").toUpperCase().slice(0, 5); }
+    catch { return ""; }
+  });
   const [providers, setProviders] = useState({ google: false, github: false });
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);

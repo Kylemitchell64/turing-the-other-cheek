@@ -3,6 +3,7 @@ import RobotSprite from "../sprites/RobotSprite";
 import CharacterSprite from "../sprites/CharacterSprite";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
+import { sfxBus } from "../audio/sfx";
 
 // The menu mascot (phase 25, grown out of the phase-21 HomeRobot). It wanders along the
 // bottom of every menu screen, behind the panels: walks left-right, flips at the edges,
@@ -253,6 +254,7 @@ export default function MenuWanderer() {
     setCrashStage("glitch");
     setFx("glitch");
     setMutter("");
+    sfxBus.emit("crash");
     after(950, () => {
       // 2) sprint off whichever edge is closer
       setFx(null);
@@ -287,11 +289,13 @@ export default function MenuWanderer() {
         mode.current = "down";
         setCrashStage("down");
         setFx("stars");
+        sfxBus.emit("thud");
         after(2700, () => {
           // 4) up (slowly), dust off, clean slate
           mode.current = "dust";
           setCrashStage("dust");
           setFx("dust");
+          sfxBus.emit("dust");
           nudges.current = [];
           setMood("calm");
           after(1700, () => {
@@ -316,6 +320,7 @@ export default function MenuWanderer() {
     if (n > NUDGE_LIMIT) { crashOut(); return; }
     setMood(moodFor(n));
     say(MUTTERS[n] || "!!!");
+    sfxBus.emit({ name: "poke", variant: n });
     // a poke bumps it a little; when it's mad it also backs away from your pointer
     const p = phys.current;
     p.offY = Math.min(p.offY, -(6 + n * 1.2));
@@ -355,6 +360,7 @@ export default function MenuWanderer() {
       d.moved = true;
       mode.current = "held";
       setHeld(true);
+      sfxBus.emit("grab");
       phys.current.gravity = false;
       phys.current.velY = 0;
       setPose((q) => ({ ...q, walking: false, look: 0 }));
@@ -385,6 +391,7 @@ export default function MenuWanderer() {
     p.onLand = () => {
       mode.current = "idle";
       setDropping(false);
+      sfxBus.emit("land");
       nudge(null);
     };
     kick();

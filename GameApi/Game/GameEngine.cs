@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using GameApi.Data;
 using GameApi.Hubs;
+using GameApi.Characters;
 using GameApi.Lobbies;
 using GameApi.Models;
 
@@ -29,6 +30,9 @@ public class GameEngine : BackgroundService
 
     // Reverse mode (phase 22) runs a fixed 6 rounds regardless of the classic MaxRounds cap.
     private const int ReverseRounds = 6;
+
+    // Solo demo (phase 29) caps at 5 rounds — long enough to get a read, short enough to demo.
+    private const int SoloRounds = 5;
 
     // Upper bound the reverse reveal waits on the attribution task before advancing anyway.
     // The guesser always returns fast (it random-falls-back internally), so this is only a
@@ -156,6 +160,8 @@ public class GameEngine : BackgroundService
                     // seat is a real human. Classic fires the impostor's answer task here.
                     if (!GameModes.IsReverse(lobby.Mode))
                         MaybeRequestAiAnswer(lobby);
+                    if (lobby.IsSolo)
+                        MaybeRequestBotAnswers(lobby);
                     if (DateTime.UtcNow >= lobby.PhaseDeadlineUtc)
                         EnterRevealing(lobby, outbound);
                     break;
@@ -215,6 +221,7 @@ public class GameEngine : BackgroundService
         lobby.RoundPrompts[roundNumber] = lobby.CurrentPrompt;
         lobby.Answers.Clear();
         lobby.AiAnswerRequested = false;
+        lobby.BotAnswerRequested.Clear(); // solo stand-ins answer every round
         lobby.AccuserName = null;
         lobby.AccusedName = null;
         lobby.VetoEligible.Clear();
@@ -285,7 +292,7 @@ public class GameEngine : BackgroundService
             try
             {
                 var answer = await _brain.AnswerAsync(ctx, CancellationToken.None);
-                await RunAiTypingAndSubmit(lobby, aiName, round, answer.Text, answer.Delay);
+                await RunTypingAndSubmit(lobby, aiName, round, answer.Text, answer.Delay, authorUserId: null, isAi: true);
             }
             catch (Exception ex)
             {
@@ -300,7 +307,36 @@ public class GameEngine : BackgroundService
     // Everything is anchored to absolute UTC instants so a hesitation blip can't drift
     // the submit time. All broadcasts are the plain PlayerTyping(name, bool) — the same
     // payload humans produce, so nothing here singles the AI out.
-    private async Task RunAiTypingAndSubmit(Lobby lobby, string aiName, int round, string text, TimeSpan delay)
+    // Solo demo (phase 29): each bot stand-in answers once per round, on the same typing +
+    // submit path the AI uses (so the indicators look identical), with a delay spread across
+    // the window like a room full of distracted humans. Bots never accuse or veto.
+    private void MaybeRequestBotAnswers(Lobby lobby)
+    {
+        var window = PromptWindow(lobby).TotalSeconds;
+        var remaining = (lobby.PhaseDeadlineUtc - DateTime.UtcNow).TotalSeconds;
+        foreach (var bot in lobby.Players.Where(p => p.IsBot))
+        {
+            if (lobby.BotAnswerRequested.Contains(bot.DisplayName)) continue;
+            lobby.BotAnswerRequested.Add(bot.DisplayName);
+
+            var text = BotAnswers.Pick(lobby.BotLinesUsed, Random.Shared);
+            // land somewhere between 15% and 80% of the window, never past the deadline
+            var secs = Math.Min(Math.Max(0.5, remaining - 1.0), window * (0.15 + Random.Shared.NextDouble() * 0.65));
+            var delay = TimeSpan.FromSeconds(secs);
+            var name = bot.DisplayName;
+            var userId = bot.UserId;
+            var round = lobby.RoundNumber;
+            var code = lobby.Code;
+            _ = Task.Run(async () =>
+            {
+                try { await RunTypingAndSubmit(lobby, name, round, text, delay, authorUserId: userId, isAi: false); }
+                catch (Exception ex) { _logger.LogWarning(ex, "bot answer task failed for lobby {Code}", code); }
+            });
+        }
+    }
+
+    private async Task RunTypingAndSubmit(Lobby lobby, string aiName, int round, string text, TimeSpan delay,
+        string? authorUserId, bool isAi)
     {
         var rng = Random.Shared;
         var now = DateTime.UtcNow;
@@ -334,7 +370,7 @@ public class GameEngine : BackgroundService
             if (lobby.State == GameState.Prompting && lobby.RoundNumber == round
                 && !lobby.Answers.ContainsKey(aiName))
             {
-                RecordAnswer(lobby, aiName, text, authorUserId: null, isAi: true);
+                RecordAnswer(lobby, aiName, text, authorUserId, isAi);
                 recorded = true;
             }
             lobby.TypingNames.Remove(aiName);
@@ -630,6 +666,7 @@ public class GameEngine : BackgroundService
         foreach (var p in lobby.Players)
         {
             if (p.DisplayName == lobby.AccuserName) continue; // accuser can't veto their own
+            if (p.IsBot) continue; // solo stand-ins never veto
             if (!p.CanVeto) continue;
             lobby.VetoEligible.Add(p.DisplayName);
             eligibleConnIds.AddRange(p.ConnectionIds);
@@ -667,6 +704,8 @@ public class GameEngine : BackgroundService
         lobby.BlackoutRound = lobby.RoundNumber + 1;
         lobby.PriorityRound = lobby.RoundNumber + 2;
         lobby.PriorityVetoerName = vetoer.DisplayName;
+        lobby.AccusationLog.Add(new AccusationRecord(
+            lobby.RoundNumber, lobby.AccuserName ?? "?", lobby.AccusedName ?? "?", "vetoed", vetoer.DisplayName));
 
         var code = lobby.Code;
         var vetoerName = vetoer.DisplayName;
@@ -693,6 +732,8 @@ public class GameEngine : BackgroundService
 
         var correct = string.Equals(accusedName, lobby.AiDisplayName, StringComparison.Ordinal);
         var code = lobby.Code;
+        lobby.AccusationLog.Add(new AccusationRecord(
+            lobby.RoundNumber, accuserName, accusedName, correct ? "correct" : "wrong", null));
 
         outbound.Add(() => _hub.Clients.Group(code)
             .SendAsync("AccusationResolved", correct, accuserName, accusedName));
@@ -723,8 +764,9 @@ public class GameEngine : BackgroundService
             }
         }
 
-        // All humans accusation-eliminated → AI survives.
-        if (lobby.Players.All(p => p.IsEliminated))
+        // All humans accusation-eliminated → AI survives. (Solo stand-ins never accuse, so
+        // they can't be eliminated — only the real humans count here.)
+        if (lobby.Players.Where(p => !p.IsBot).All(p => p.IsEliminated))
         {
             lobby.WinType = WinType.AiSurvival;
             EndGame(lobby, outbound);
@@ -738,6 +780,7 @@ public class GameEngine : BackgroundService
     private void AdvanceAfterRound(Lobby lobby, List<Func<Task>> outbound)
     {
         var cap = GameModes.IsReverse(lobby.Mode) ? ReverseRounds : _timings.MaxRounds;
+        if (lobby.IsSolo) cap = Math.Min(cap, SoloRounds); // demo games stay short
         if (lobby.RoundNumber >= cap)
         {
             if (GameModes.IsReverse(lobby.Mode))
@@ -760,24 +803,120 @@ public class GameEngine : BackgroundService
     {
         lobby.State = GameState.Ended;
 
+        var dto = BuildGameEnded(lobby);
+        var code = lobby.Code;
+        outbound.Add(() => _hub.Clients.Group(code).SendAsync("GameEnded", dto));
+
+        // Persist to the DB (real author ids) off the lock, on the thread pool. Solo demo
+        // games are never persisted: bot seats have no user rows, and a demo isn't a stat.
+        if (!lobby.IsSolo)
+        {
+            var snapshot = SnapshotForPersist(lobby);
+            outbound.Add(() => PersistAsync(snapshot));
+        }
+    }
+
+    // The GameEnded payload. Public so a Rejoin after the game is over can resend the exact
+    // same thing. Caller holds lobby.Sync.
+    public static GameEndedDto BuildGameEnded(Lobby lobby)
+    {
         var transcript = lobby.Transcript
             .Select(r => new TranscriptMessageDto(r.Round, r.DisplayName, r.Text, r.IsAi))
             .ToList();
 
-        var dto = new GameEndedDto(
+        // "NAME: {json}" lines -> (name, json). Only humans who had a profile appear.
+        var notes = new List<StyleNoteDto>();
+        foreach (var line in lobby.StyleSummaries)
+        {
+            var idx = line.IndexOf(": ", StringComparison.Ordinal);
+            if (idx <= 0) continue;
+            notes.Add(new StyleNoteDto(line[..idx], line[(idx + 2)..]));
+        }
+
+        return new GameEndedDto(
             WinType: lobby.WinType.ToString(),
             WinnerName: lobby.WinnerName,
             // Reverse mode never seats a hidden AI, so there's no fake identity to unmask;
             // "the AI" is a safe stand-in the client doesn't lean on for reverse endings.
             AiRealIdentityName: lobby.AiDisplayName ?? "the AI",
-            FullTranscript: transcript);
+            FullTranscript: transcript,
+            Accusations: lobby.AccusationLog
+                .Select(a => new AccusationLogDto(a.Round, a.Accuser, a.Accused, a.Outcome, a.Vetoer))
+                .ToList(),
+            StyleNotes: notes,
+            Prompts: lobby.RoundPrompts.OrderBy(kv => kv.Key)
+                .Select(kv => new RoundPromptDto(kv.Key, kv.Value)).ToList(),
+            IsSolo: lobby.IsSolo);
+    }
 
-        var code = lobby.Code;
-        outbound.Add(() => _hub.Clients.Group(code).SendAsync("GameEnded", dto));
+    // Rejoin snapshot (phase 29). Caller holds lobby.Sync. Past rounds are rebuilt from the
+    // transcript with a fresh shuffle (slot order never carried information anyway).
+    public ResyncDto BuildResync(Lobby lobby, LobbyPlayer me, LobbyStateDto lobbyDto)
+    {
+        var started = lobby.State != GameState.Lobby;
+        List<RosterEntryDto>? roster = null;
+        var tokens = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (started)
+        {
+            var entries = lobby.Players
+                .Select(p => new RosterEntryDto(p.DisplayName, p.TokensRemaining, CharacterDefaults.Resolve(p.CharacterJson, p.DisplayName)))
+                .ToList();
+            foreach (var p in lobby.Players) tokens[p.DisplayName] = p.TokensRemaining;
+            if (lobby.AiDisplayName != null)
+            {
+                entries.Add(new RosterEntryDto(lobby.AiDisplayName, 3, CharacterDefaults.FromName(lobby.AiDisplayName)));
+                tokens[lobby.AiDisplayName] = 3;
+                roster = GameHub.ShuffleAiNotLast(entries, lobby.AiDisplayName);
+            }
+            else
+            {
+                Shuffle(entries);
+                roster = entries;
+            }
+        }
 
-        // Persist to the DB (real author ids) off the lock, on the thread pool.
-        var snapshot = SnapshotForPersist(lobby);
-        outbound.Add(() => PersistAsync(snapshot));
+        var reverse = GameModes.IsReverse(lobby.Mode);
+        var history = new List<AnswersRevealedDto>();
+        AnswersRevealedDto? reveal = null;
+        if (started && !reverse)
+        {
+            var currentRevealed = lobby.State != GameState.Prompting;
+            foreach (var g in lobby.Transcript.GroupBy(r => r.Round).OrderBy(g => g.Key))
+            {
+                if (g.Key > lobby.RoundNumber) continue;
+                if (g.Key == lobby.RoundNumber && !currentRevealed) continue;
+                var answers = g.Select(r => new RevealedAnswerDto(r.DisplayName, r.Text)).ToList();
+                Shuffle(answers);
+                var prompt = lobby.RoundPrompts.TryGetValue(g.Key, out var p) ? p : "";
+                var dto = new AnswersRevealedDto(g.Key, prompt, answers);
+                history.Add(dto);
+                if (g.Key == lobby.RoundNumber) reveal = dto;
+            }
+        }
+
+        var accusationOpen = lobby.State == GameState.Accusing
+            && lobby.AccuserName == null
+            && lobby.BlackoutRound != lobby.RoundNumber;
+        var canVetoNow = lobby.State == GameState.VetoWindow && lobby.VetoEligible.Contains(me.DisplayName);
+
+        return new ResyncDto(
+            Lobby: lobbyDto,
+            Roster: roster,
+            Phase: lobby.State.ToString(),
+            Round: lobby.RoundNumber,
+            Prompt: lobby.CurrentPrompt,
+            DeadlineUtc: lobby.PhaseDeadlineUtc,
+            AnsweredThisRound: lobby.Answers.ContainsKey(me.DisplayName),
+            Reveal: reveal,
+            History: history,
+            AccusationOpen: accusationOpen,
+            PriorityName: accusationOpen && lobby.InPriorityWindow ? lobby.PriorityVetoerName : null,
+            Accuser: lobby.AccuserName,
+            Accused: lobby.AccusedName,
+            CanVetoNow: canVetoNow,
+            Eliminated: lobby.Players.Where(p => p.IsEliminated).Select(p => p.DisplayName).ToList(),
+            Tokens: tokens,
+            Ended: lobby.State == GameState.Ended ? BuildGameEnded(lobby) : null);
     }
 
     // ---- helpers ----

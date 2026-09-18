@@ -2202,3 +2202,39 @@ button.ops-pause { padding: 0.55rem 1rem; }
   .home-robot { height: 170px; }
   .screen > .home-robot { z-index: 2; }
 }
+
+
+/* ---- phase 29: solo demo, QR invite, recap, reconnect ---- */
+.solo-btn .seg-rec { margin-left: 0.4rem; }
+.invite { display: flex; align-items: center; gap: 0.9rem; margin: 0.2rem 0 0.8rem; }
+.invite .qr { flex: 0 0 auto; image-rendering: pixelated; border: 1px solid var(--neon-dim); border-radius: 6px; padding: 4px; background: #040704; }
+.invite-text { display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+.invite-btn { font-size: 0.72rem; padding: 0.45rem 0.7rem; align-self: flex-start; }
+.maint-banner.reconnect { border-color: #ffb300; }
+.maint-banner.reconnect .maint-tag { color: #ffb300; }
+
+.recap { display: flex; flex-direction: column; gap: 0.5rem; }
+.recap .solo-note { color: var(--muted); }
+.recap-rounds, .recap-acc { display: flex; flex-direction: column; gap: 0.4rem; }
+.recap-row { display: flex; gap: 0.6rem; align-items: flex-start; font-size: 0.82rem; line-height: 1.45; }
+.recap-body { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.recap-prompt { color: var(--muted); }
+.recap-ai { color: #ff8a94; word-break: break-word; }
+.recap-ai::before { content: "AI: "; color: #ff3b4e; letter-spacing: 1px; font-size: 0.7rem; }
+.recap-acc-text { min-width: 0; word-break: break-word; }
+.recap-acc-text b { color: var(--neon); font-weight: bold; }
+.acc-tag { color: var(--muted); }
+.acc-tag.good { color: var(--neon); }
+.acc-tag.bad { color: #ff3b4e; }
+.notes { display: grid; grid-template-columns: 1fr; gap: 0.5rem; }
+.note { border: 1px solid var(--neon-dim); border-radius: 8px; padding: 0.6rem 0.7rem; background: #060a08; min-width: 0; }
+.note-name { color: var(--neon); letter-spacing: 1px; margin-bottom: 0.3rem; }
+.note-row { display: flex; gap: 0.5rem; font-size: 0.74rem; line-height: 1.4; }
+.note-k { color: var(--muted); flex: 0 0 38%; overflow: hidden; text-overflow: ellipsis; }
+.note-v { color: var(--text); min-width: 0; word-break: break-word; }
+.share-row { display: flex; align-items: center; gap: 0.7rem; margin-top: 0.3rem; flex-wrap: wrap; }
+
+@media (min-width: 900px) {
+  .notes { grid-template-columns: 1fr 1fr; }
+  .invite .qr { width: 140px; height: 140px; }
+}

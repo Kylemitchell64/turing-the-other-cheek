@@ -29,7 +29,7 @@ public record LobbyPlayerDto(
 public record LobbyStateDto(
     string Code, string State, List<LobbyPlayerDto> Players,
     string PackKey, string Difficulty, string PaceKey, string? CrewName, string? CustomPackName,
-    string MusicMood, string Mode);
+    string MusicMood, string Mode, bool IsSolo = false);
 
 // One entry in GameStarted(roster[]). Humans + the AI, indistinguishable.
 // Deliberately NO user id, NO isAi, NO isHost — just name + tokens + character.

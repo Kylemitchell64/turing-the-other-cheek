@@ -1,4 +1,4 @@
-import { createContext, useContext, useRef, useState, useCallback } from "react";
+import { createContext, useContext, useRef, useState, useCallback, useEffect } from "react";
 import { buildGameConnection } from "./gameConnection";
 import { measureClockSkew } from "../api/client";
 import { DEFAULT_PACK } from "./packs";
@@ -34,7 +34,10 @@ export function LobbyProvider({ children }) {
   const [resolved, setResolved] = useState(null); // { correct, accuser, accused }
   const [eliminated, setEliminated] = useState([]); // display names knocked out of accusing
   const [wrongAccusers, setWrongAccusers] = useState([]); // names who accused wrong (unvetoed) — drives end-screen deltas
-  const [ended, setEnded] = useState(null); // { winType, winnerName, aiRealIdentityName, fullTranscript[] }
+  const [ended, setEnded] = useState(null); // { winType, winnerName, aiRealIdentityName, fullTranscript[], accusations[], styleNotes[], prompts[], isSolo }
+  // Phase 29: after a Rejoin snapshot says we already answered the current round, this holds
+  // that round number so the Game screen shows "sent" instead of an empty box.
+  const [answeredRound, setAnsweredRound] = useState(null);
   const [events, setEvents] = useState([]); // a simple scrolling event log for manual testing
 
   // Host-picked lobby options (pack / impostor difficulty / answer pace). Seeded from
@@ -242,6 +245,20 @@ export function LobbyProvider({ children }) {
         log(`game over — ${payload.winType}`);
       });
 
+      // ---- phase 29: survive a dropped socket (phone lock, tab sleep, flaky wifi) ----
+      // SignalR's auto-reconnect brings the socket back, but with a NEW connection id the
+      // server no longer maps it to our seat or lobby group. Rejoin re-attaches and returns
+      // a full snapshot; applyResync rebuilds the screen from it.
+      conn.onreconnecting(() => setStatus("reconnecting"));
+      conn.onreconnected(async () => {
+        setStatus("connected");
+        await rejoinRef.current();
+      });
+      conn.onclose(() => {
+        // Only mark disconnected if we didn't tear it down ourselves (leaveLobby nulls the ref).
+        if (connRef.current === conn) setStatus("disconnected");
+      });
+
       connRef.current = conn;
     }
 
@@ -255,6 +272,107 @@ export function LobbyProvider({ children }) {
     }
     return conn;
   }, [log]);
+
+  // Apply a Rejoin snapshot (see ResyncDto on the server). Mirrors what the live events
+  // would have set, minus anything that has already passed.
+  const applyResync = useCallback((snap) => {
+    if (!snap) return;
+    setLobby(snap.lobby);
+    if (snap.lobby?.packKey) setPackKey(snap.lobby.packKey);
+    if (snap.lobby?.difficulty) setDifficulty(snap.lobby.difficulty);
+    if (snap.lobby?.paceKey) setPaceKey(snap.lobby.paceKey);
+    if (snap.lobby?.mode) setMode(snap.lobby.mode);
+    if (snap.lobby?.musicMood) setMusicMood(snap.lobby.musicMood);
+    setCustomPackName(snap.lobby?.customPackName ?? null);
+
+    const started = snap.phase !== "Lobby";
+    if (!started) {
+      setRoster(null);
+      setPhase(null);
+      setRound(null);
+      setEnded(null);
+      return;
+    }
+    setRoster(snap.roster || null);
+    setTokens(snap.tokens || {});
+    setEliminated(snap.eliminated || []);
+    setHistory(snap.history || []);
+    setReveal(snap.reveal || null);
+    setTyping({});
+    setRound({ number: snap.round, prompt: snap.prompt, deadlineUtc: snap.deadlineUtc });
+    setAnsweredRound(snap.answeredThisRound ? snap.round : null);
+    setAccusation(null);
+    setAccusationMade(null);
+    setVetoWindow(null);
+    setResolved(null);
+    switch (snap.phase) {
+      case "Prompting":
+        setPhase("prompting");
+        setEnded(null);
+        break;
+      case "Revealing":
+        setPhase("revealing");
+        break;
+      case "Accusing":
+        setPhase("accusing");
+        if (snap.accusationOpen) setAccusation({ deadlineUtc: snap.deadlineUtc, priorityName: snap.priorityName || null });
+        break;
+      case "VetoWindow":
+        setAccusationMade(snap.accuser ? { accuser: snap.accuser, accused: snap.accused } : null);
+        if (snap.canVetoNow) {
+          setVetoWindow({ deadlineUtc: snap.deadlineUtc });
+          setPhase("veto");
+        } else {
+          setPhase("accusing");
+        }
+        break;
+      case "Ended":
+        setEnded(snap.ended || null);
+        setPhase("ended");
+        break;
+      default:
+        break;
+    }
+    log("reconnected — state resynced");
+  }, [log]);
+
+  // Rejoin on the current connection. Safe to call any time; a user without a seat gets null.
+  const rejoinRef = useRef(async () => {});
+  rejoinRef.current = async () => {
+    const conn = connRef.current;
+    if (!conn || conn.state !== "Connected") return;
+    try {
+      const snap = await conn.invoke("Rejoin");
+      if (snap) applyResync(snap);
+    } catch { /* the next event will catch us up */ }
+  };
+
+  // A phone coming back from the lock screen: the socket may be gone for good (auto
+  // reconnect gave up while backgrounded). Kick it: start a fresh connection and Rejoin.
+  useEffect(() => {
+    const onVisible = async () => {
+      if (document.visibilityState !== "visible") return;
+      const conn = connRef.current;
+      if (!conn || !lobby) return;
+      if (conn.state === "Disconnected") {
+        try {
+          setStatus("connecting");
+          await conn.start();
+          setStatus("connected");
+          await rejoinRef.current();
+        } catch { setStatus("disconnected"); }
+      } else if (conn.state === "Connected") {
+        // Still up, but we may have missed events while asleep — cheap to resync.
+        await rejoinRef.current();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", onVisible);
+    };
+  }, [lobby]);
 
   const createLobby = useCallback(async () => {
     setError(null);
@@ -284,6 +402,22 @@ export function LobbyProvider({ children }) {
     setError(null);
     const conn = await ensureConnected();
     await conn.invoke("StartGame");
+  }, [ensureConnected]);
+
+  // Solo demo (phase 29): alone in the lobby, seat three bot stand-ins + the AI and go.
+  const startSoloGame = useCallback(async () => {
+    setError(null);
+    const conn = await ensureConnected();
+    await conn.invoke("StartSoloGame");
+  }, [ensureConnected]);
+
+  // One-tap from Home: create a lobby and immediately start it solo.
+  const playSolo = useCallback(async () => {
+    setError(null);
+    setRoster(null);
+    const conn = await ensureConnected();
+    await conn.invoke("CreateLobby");
+    await conn.invoke("StartSoloGame");
   }, [ensureConnected]);
 
   // Host picks the lobby options pre-start (pack / difficulty / pace / mode). Any omitted
@@ -364,6 +498,7 @@ export function LobbyProvider({ children }) {
     setEliminated([]);
     setWrongAccusers([]);
     setEnded(null);
+    setAnsweredRound(null);
     setEvents([]);
     setHistory([]);
     setTokens({});
@@ -385,10 +520,10 @@ export function LobbyProvider({ children }) {
   const value = {
     status, lobby, crewCode, roster, error, setError,
     round, phase, reveal, reverseReveal, aiGuesses, accusation, accusationMade,
-    vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, events,
+    vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, events, answeredRound,
     tokens, clockSkew, history, packKey, difficulty, paceKey, mode, customPackName, typing,
     musicMood, setLobbyMusic,
-    createLobby, joinLobby, createCrewLobby, setCrewCode, startGame, setLobbyOptions, setCustomPack, leaveLobby,
+    createLobby, joinLobby, createCrewLobby, setCrewCode, startGame, startSoloGame, playSolo, setLobbyOptions, setCustomPack, leaveLobby,
     submitAnswer, makeAccusation, useFakeOut, setTypingState,
   };
 

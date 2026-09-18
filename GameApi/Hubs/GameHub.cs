@@ -224,7 +224,14 @@ public class GameHub : Hub
 
     // Host-only. Requires 3–8 humans. Injects the AI and shuffles the roster so
     // the AI is never last, then announces GameStarted.
-    public async Task StartGame()
+    public Task StartGame() => StartGameInternal(solo: false);
+
+    // Solo demo (phase 29): host alone in the lobby; three bot stand-ins are seated and
+    // the game starts in classic mode with the same roster rules. Bots answer, never
+    // accuse/veto; the AI still hides among them. 5 rounds, nothing persisted.
+    public Task StartSoloGame() => StartGameInternal(solo: true);
+
+    private async Task StartGameInternal(bool solo)
     {
         ThrowIfMaintenance();
 
@@ -241,11 +248,43 @@ public class GameHub : Hub
         List<(string UserId, string Name)> seats;
         lock (lobby.Sync)
         {
-            memberIds.AddRange(lobby.Players.Select(p => p.UserId));
+            if (lobby.HostUserId != UserId)
+                throw new HubException("Only the host can start the game");
+            if (lobby.State != GameState.Lobby && lobby.State != GameState.Ended)
+                throw new HubException("The game has already started");
+
+            // Seat (or clear) the solo stand-ins BEFORE any of the member lookups below.
+            lobby.Players.RemoveAll(p => p.IsBot);
+            if (solo)
+            {
+                if (lobby.Players.Count != 1)
+                    throw new HubException("solo demo is for when you're alone in the lobby");
+                if (lobby.CrewId != null)
+                    throw new HubException("crew rooms can't run a solo demo");
+                lobby.IsSolo = true;
+                lobby.Mode = GameModes.Classic;
+                var taken = new List<string> { lobby.Players[0].DisplayName };
+                for (var i = 0; i < 3; i++)
+                {
+                    var name = _store.PickAiName(taken);
+                    taken.Add(name);
+                    lobby.Players.Add(new LobbyPlayer { UserId = "bot:" + Guid.NewGuid().ToString("N"), DisplayName = name, IsBot = true });
+                }
+            }
+            else
+            {
+                lobby.IsSolo = false;
+            }
+
+            memberIds.AddRange(lobby.Players.Where(p => !p.IsBot).Select(p => p.UserId));
             mode = lobby.Mode;
-            seats = lobby.Players.Select(p => (p.UserId, p.DisplayName)).ToList();
+            seats = lobby.Players.Where(p => !p.IsBot).Select(p => (p.UserId, p.DisplayName)).ToList();
         }
         await _engine.RefreshStyleProfilesAsync(memberIds);
+
+        // Solo: the bots are seated now — let the client see them (and the IsSolo flag,
+        // which drives its round cap) before GameStarted lands.
+        if (solo) await BroadcastLobby(lobby);
 
         // Reverse mode (phase 22) needs real play history to read the group: every seat must
         // be a signed-in (non-guest) user with at least 3 writing samples. Gate the start with
@@ -282,7 +321,7 @@ public class GameHub : Hub
                 lobby.ResetForNewGame();
 
             var humanCount = lobby.Players.Count;
-            if (humanCount < 3)
+            if (humanCount < 3 && !lobby.IsSolo)
                 throw new HubException("Need at least 3 players to start");
             if (humanCount > 8)
                 throw new HubException("Too many players (max 8)");
@@ -332,6 +371,34 @@ public class GameHub : Hub
         await Clients.Group(lobby.Code).SendAsync("GameStarted", roster);
         foreach (var send in outbound)
             await send();
+    }
+
+    // Phone lock / tab sleep dropped the socket: reattach this NEW connection to the seat the
+    // user already holds (any lobby, any state), put it back in the group, and hand back a
+    // full snapshot so the screen can rebuild. Returns null when the user holds no seat.
+    public async Task<ResyncDto?> Rejoin()
+    {
+        Lobby? mine = null;
+        foreach (var lobby in _store.All)
+        {
+            lock (lobby.Sync)
+            {
+                if (lobby.FindPlayer(UserId) != null) { mine = lobby; break; }
+            }
+        }
+        if (mine == null) return null;
+
+        ResyncDto snapshot;
+        lock (mine.Sync)
+        {
+            var me = mine.FindPlayer(UserId)!;
+            me.ConnectionIds.Add(Context.ConnectionId);
+            snapshot = _engine.BuildResync(mine, me, BuildLobbyDto(mine));
+        }
+        await Groups.AddToGroupAsync(Context.ConnectionId, mine.Code);
+        _logger.LogInformation("{User} rejoined lobby {Code}", UserId, mine.Code);
+        await BroadcastLobby(mine);
+        return snapshot;
     }
 
     // Reverse mode needs at least this many writing samples per player for the AI to have a
@@ -758,19 +825,22 @@ public class GameHub : Hub
     private async Task BroadcastLobby(Lobby lobby)
     {
         LobbyStateDto dto;
-        lock (lobby.Sync)
-        {
-            var players = lobby.Players
-                .Select(p => new LobbyPlayerDto(
-                    p.DisplayName, p.TokensRemaining, p.IsConnected, p.UserId == lobby.HostUserId,
-                    CharacterDefaults.Resolve(p.CharacterJson, p.DisplayName)))
-                .ToList();
-            dto = new LobbyStateDto(lobby.Code, lobby.State.ToString(), players,
-                lobby.PackKey, lobby.Difficulty, lobby.PaceKey, lobby.CrewName,
-                lobby.PackKey == PromptPacks.CustomKey ? lobby.CustomPack?.Name : null,
-                lobby.MusicMood, lobby.Mode);
-        }
+        lock (lobby.Sync) dto = BuildLobbyDto(lobby);
         await Clients.Group(lobby.Code).SendAsync("LobbyUpdated", dto);
+    }
+
+    // Caller holds lobby.Sync.
+    private static LobbyStateDto BuildLobbyDto(Lobby lobby)
+    {
+        var players = lobby.Players
+            .Select(p => new LobbyPlayerDto(
+                p.DisplayName, p.TokensRemaining, p.IsConnected, p.UserId == lobby.HostUserId,
+                CharacterDefaults.Resolve(p.CharacterJson, p.DisplayName)))
+            .ToList();
+        return new LobbyStateDto(lobby.Code, lobby.State.ToString(), players,
+            lobby.PackKey, lobby.Difficulty, lobby.PaceKey, lobby.CrewName,
+            lobby.PackKey == PromptPacks.CustomKey ? lobby.CustomPack?.Name : null,
+            lobby.MusicMood, lobby.Mode, lobby.IsSolo);
     }
 
     // Locate the lobby the current connection belongs to. Small linear scan —
@@ -803,7 +873,7 @@ public class GameHub : Hub
     }
 
     // Shuffle, but guarantee the AI never lands in the last slot.
-    private static List<RosterEntryDto> ShuffleAiNotLast(List<RosterEntryDto> entries, string aiName)
+    internal static List<RosterEntryDto> ShuffleAiNotLast(List<RosterEntryDto> entries, string aiName)
     {
         var list = entries.ToList();
         do

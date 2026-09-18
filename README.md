@@ -43,6 +43,13 @@ Backend is in `GameApi`, the phone-first React client is in `game-client`.
 - Game ends on a correct un-vetoed accusation (Detector win), or after 8 rounds / all
   humans eliminated (AI survives).
 
+**On your own?** The home screen has a **solo demo**: three bot stand-ins get seated with
+you and the AI still hides among them. Five rounds, nothing saved, same rules — enough to
+see the trick without rounding up friends. Hosts also get a **QR code + share link** in the
+lobby so phones can scan in instead of typing the code, and every game ends on a **recap**:
+the AI's line for each prompt, every accusation and how it went, the style notes the AI was
+carrying on each player, and a share button that hands your phone a result card.
+
 There's also a **reverse mode**: no hidden impostor — everyone's human, and the *AI* is the one
 guessing who wrote which (shuffled, anonymous) answer each round. It's the same style-profile
 tech pointed the other way, so it's gated on having a bit of play history (see the ADRs). The
@@ -51,7 +58,7 @@ screen.
 
 ## Tests & CI
 
-Every push and PR runs the whole thing through GitHub Actions — the .NET suite (233 tests on EF InMemory, no DB needed), the client lint + build, a Docker image build, and a Playwright game played start to finish across desktop and mobile viewports. Green badge above means all of that passed on `main`.
+Every push and PR runs the whole thing through GitHub Actions — the .NET suite (236 tests on EF InMemory, no DB needed), the client lint + build, a Docker image build, and a Playwright game played start to finish across desktop and mobile viewports. Green badge above means all of that passed on `main`.
 
 ## Load test
 
@@ -167,7 +174,9 @@ Full click-by-click walkthrough is in `DEPLOY.md`.
 ## Architecture notes
 
 Realtime runs over a single SignalR hub (`/hubs/game`), JWT passed as a query-string token
-on the handshake. Lobby and game state live **in memory** in a `ConcurrentDictionary`
+on the handshake. A dropped socket (phone lock, tunnel) auto-reconnects and calls `Rejoin`,
+which re-attaches the new connection to the player's seat and returns a full state snapshot
+so the screen rebuilds mid-round instead of freezing. Lobby and game state live **in memory** in a `ConcurrentDictionary`
 keyed by join code, each lobby behind its own lock — a hosted background service ticks the
 state machine and fires all timers server-side, so client clocks are never trusted. The DB
 only gets written at game end (the game, messages, per-player stats, and each player's

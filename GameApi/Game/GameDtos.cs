@@ -21,7 +21,41 @@ public record GameEndedDto(
     string WinType,
     string? WinnerName,
     string AiRealIdentityName,
-    List<TranscriptMessageDto> FullTranscript);
+    List<TranscriptMessageDto> FullTranscript,
+    // ---- recap (phase 29) ----
+    // Every accusation and how it went ("vetoed" never says whether it was right).
+    List<AccusationLogDto> Accusations,
+    // The AI's style notes on each human it had a profile for — the "it learned how you
+    // type" payoff. Only revealed here, after the game.
+    List<StyleNoteDto> StyleNotes,
+    List<RoundPromptDto> Prompts,
+    bool IsSolo);
+
+public record AccusationLogDto(int Round, string Accuser, string Accused, string Outcome, string? Vetoer);
+public record StyleNoteDto(string DisplayName, string NotesJson);
+public record RoundPromptDto(int Round, string Prompt);
+
+// Rejoin/resync snapshot (phase 29): everything a client needs to rebuild its screen after
+// a dropped socket (phone lock). Same anonymity rules as the live events — the roster and
+// answers carry names only; Ended is the same payload GameEnded sent.
+public record ResyncDto(
+    GameApi.Lobbies.LobbyStateDto Lobby,
+    List<GameApi.Lobbies.RosterEntryDto>? Roster,
+    string Phase,
+    int Round,
+    string Prompt,
+    DateTime DeadlineUtc,
+    bool AnsweredThisRound,
+    AnswersRevealedDto? Reveal,
+    List<AnswersRevealedDto> History,
+    bool AccusationOpen,
+    string? PriorityName,
+    string? Accuser,
+    string? Accused,
+    bool CanVetoNow,
+    List<string> Eliminated,
+    Dictionary<string, int> Tokens,
+    GameEndedDto? Ended);
 
 // ---- reverse mode (phase 22) ----
 

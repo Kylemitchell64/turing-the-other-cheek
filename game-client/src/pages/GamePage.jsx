@@ -6,6 +6,8 @@ import CountdownRing from "../components/CountdownRing";
 import AccuseButton from "../components/AccuseButton";
 import Podium from "../sprites/Podium";
 import RobotSprite from "../sprites/RobotSprite";
+import EndRecap from "../components/EndRecap";
+import ReconnectBanner from "../components/ReconnectBanner";
 
 // Token pips for a player badge. Shows current tokens out of 3.
 function Tokens({ n }) {
@@ -38,12 +40,12 @@ export default function GamePage() {
   const {
     roster, phase, round, reveal, reverseReveal, aiGuesses, mode, accusation, accusationMade,
     vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, history,
-    tokens, clockSkew, typing,
-    leaveLobby, submitAnswer, makeAccusation, useFakeOut: sendFakeOut, startGame,
+    tokens, clockSkew, typing, lobby, answeredRound,
+    leaveLobby, submitAnswer, makeAccusation, useFakeOut: sendFakeOut, startGame, startSoloGame,
     setTypingState,
   } = useLobby();
   const isReverse = mode === "reverse";
-  const maxRounds = isReverse ? 6 : 8;
+  const maxRounds = isReverse ? 6 : lobby?.isSolo ? 5 : 8;
   const navigate = useNavigate();
 
   const [answer, setAnswer] = useState("");
@@ -71,6 +73,12 @@ export default function GamePage() {
       setMsg(null);
     }
   }, [round]);
+
+  // After a reconnect the server tells us whether we already answered this round (phase 29).
+  // Runs after the per-round reset above so it wins on the same render.
+  useEffect(() => {
+    if (round && answeredRound === round.number) setSubmitted(true);
+  }, [round, answeredRound]);
 
   // Keep the chat scrollback pinned to the newest round.
   useEffect(() => {
@@ -124,7 +132,8 @@ export default function GamePage() {
   };
 
   const onRematch = async () => {
-    try { await startGame(); }
+    // a solo demo rematches as a solo demo (the normal start needs 3 humans)
+    try { await (ended?.isSolo ? startSoloGame() : startGame()); }
     catch (err) { setMsg(err.message || "couldn't restart"); }
   };
 
@@ -195,6 +204,8 @@ export default function GamePage() {
         <span className="who">{myName} <Tokens n={myTokens} /></span>
         <button className="ghost" onClick={onLeave}>leave</button>
       </div>
+
+      <ReconnectBanner />
 
       {/* END SCREEN */}
       {phase === "ended" && ended ? (
@@ -499,6 +510,8 @@ function EndScreen({ ended, myName, roster, iWasFooled, onRematch, onLeave, msg 
           ))}
         </div>
 
+        <EndRecap ended={ended} myName={myName} />
+
         <h3 className="section">your stat deltas</h3>
         <div className="reveal-box small">+1 game played</div>
 
@@ -546,6 +559,8 @@ function EndScreen({ ended, myName, roster, iWasFooled, onRematch, onLeave, msg 
         the AI was <b className="ai-name">{ended.aiRealIdentityName}</b>
       </div>
 
+      <EndRecap ended={ended} myName={myName} />
+
       <h3 className="section">the whole transcript — its lines glow red</h3>
       <div className="transcript">
         {ended.fullTranscript.map((m, i) => (
@@ -559,7 +574,7 @@ function EndScreen({ ended, myName, roster, iWasFooled, onRematch, onLeave, msg 
 
       <h3 className="section">your stat deltas</h3>
       <div className="reveal-box small">
-        {deltas.join("  ·  ")}
+        {ended.isSolo ? "solo demo — nothing saved" : deltas.join("  ·  ")}
       </div>
 
       {msg && <div className="error">{msg}</div>}
