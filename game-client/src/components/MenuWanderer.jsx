@@ -84,6 +84,7 @@ export default function MenuWanderer() {
   const [mutter, setMutter] = useState("");
   const [fx, setFx] = useState(null); // "glitch" | "stars" | "dust" | null — overlay particles
   const [held, setHeld] = useState(false);
+  const [dropping, setDropping] = useState(false); // released, still falling to the floor
   const [crashStage, setCrashStage] = useState(null); // mirrors mode for CSS classes
   const timers = useRef([]);
   const after = useCallback((ms, fn) => { const t = setTimeout(fn, ms); timers.current.push(t); return t; }, []);
@@ -372,8 +373,10 @@ export default function MenuWanderer() {
     drag.current = null;
     try { walkerRef.current?.releasePointerCapture?.(e.pointerId); } catch { /* ditto */ }
     if (!d.moved) { nudge(e.clientX); return; }
-    // dropped: fall to the floor, land with a squash, then count it as a nudge
+    // dropped: fall to the floor, land with a squash, then count it as a nudge. It stays
+    // "dropping" (layer lifted above the panels) until it actually touches down.
     setHeld(false);
+    setDropping(true);
     const p = phys.current;
     p.spin = 0;
     p.rot = 0;
@@ -381,6 +384,7 @@ export default function MenuWanderer() {
     p.velY = 0;
     p.onLand = () => {
       mode.current = "idle";
+      setDropping(false);
       nudge(null);
     };
     kick();
@@ -415,7 +419,7 @@ export default function MenuWanderer() {
   const interactive = !reduced;
 
   return (
-    <div className={`home-robot${crashStage ? " crashing" : ""}${held || crashStage ? " active" : ""}`} aria-hidden="true">
+    <div className={`home-robot${crashStage ? " crashing" : ""}${held || dropping || crashStage ? " active" : ""}`} aria-hidden="true">
       <div
         className={`home-robot-walker${interactive ? " grabbable" : ""}${held ? " grabbing" : ""}`}
         style={style}
