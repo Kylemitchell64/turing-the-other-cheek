@@ -184,6 +184,8 @@ public class GameEngine : BackgroundService
                     break;
 
                 case GameState.Accusing:
+                    if (lobby.IsSolo)
+                        MaybeBotAccuse(lobby, outbound);
                     // Priority sub-window ended with no accusation → open the general window.
                     if (lobby.InPriorityWindow && DateTime.UtcNow >= lobby.PhaseDeadlineUtc
                         && lobby.AccuserName == null)
@@ -199,7 +201,9 @@ public class GameEngine : BackgroundService
                     break;
 
                 case GameState.VetoWindow:
-                    if (DateTime.UtcNow >= lobby.PhaseDeadlineUtc)
+                    if (lobby.IsSolo)
+                        MaybeBotVeto(lobby, outbound);
+                    if (lobby.State == GameState.VetoWindow && DateTime.UtcNow >= lobby.PhaseDeadlineUtc)
                         ResolveAccusation(lobby, outbound); // nobody vetoed in time
                     break;
             }
@@ -222,6 +226,8 @@ public class GameEngine : BackgroundService
         lobby.Answers.Clear();
         lobby.AiAnswerRequested = false;
         lobby.BotAnswerRequested.Clear(); // solo stand-ins answer every round
+        lobby.BotAccuseAtUtc = null;
+        lobby.BotVetoAtUtc = null;
         lobby.AccuserName = null;
         lobby.AccusedName = null;
         lobby.VetoEligible.Clear();
@@ -333,6 +339,61 @@ public class GameEngine : BackgroundService
                 catch (Exception ex) { _logger.LogWarning(ex, "bot answer task failed for lobby {Code}", code); }
             });
         }
+    }
+
+    // Solo drama, part 1: in an open general accusation window (round 2+, at most twice a
+    // game, SoloDramaChance per round) a bot accuses a random seat a few seconds in. The
+    // target can be anyone — even the AI — because part 2 guarantees a fake-out, and a veto
+    // never reveals the result. The visitor sees the accusation land, the veto window (they
+    // can burn a token too), the screen shake, and the blackout round: the whole rule, live.
+    private void MaybeBotAccuse(Lobby lobby, List<Func<Task>> outbound)
+    {
+        if (lobby.InPriorityWindow || lobby.AccuserName != null || lobby.BlackoutRound == lobby.RoundNumber) return;
+        if (lobby.RoundNumber < 2 || lobby.BotDramaCount >= 2) return;
+
+        if (lobby.BotDramaDecidedRound != lobby.RoundNumber)
+        {
+            lobby.BotDramaDecidedRound = lobby.RoundNumber;
+            if (Random.Shared.NextDouble() < _timings.SoloDramaChance)
+            {
+                var window = Math.Max(0.5, (lobby.PhaseDeadlineUtc - DateTime.UtcNow).TotalSeconds);
+                var at = Math.Min(window * 0.6, 3.0 + Random.Shared.NextDouble() * 4.0);
+                lobby.BotAccuseAtUtc = DateTime.UtcNow.AddSeconds(at);
+            }
+            return;
+        }
+
+        if (lobby.BotAccuseAtUtc == null || DateTime.UtcNow < lobby.BotAccuseAtUtc) return;
+        lobby.BotAccuseAtUtc = null;
+
+        var bots = lobby.Players.Where(p => p.IsBot && p.TokensRemaining > 0 && !p.IsEliminated).ToList();
+        if (bots.Count < 2) return; // need a second bot with a token for the fake-out
+        var accuser = bots[Random.Shared.Next(bots.Count)];
+        var targets = lobby.Players.Where(p => p.DisplayName != accuser.DisplayName).Select(p => p.DisplayName).ToList();
+        if (lobby.AiDisplayName != null) targets.Add(lobby.AiDisplayName);
+        var accused = targets[Random.Shared.Next(targets.Count)];
+
+        lobby.AccuserName = accuser.DisplayName;
+        lobby.AccusedName = accused;
+        lobby.BotDramaCount++;
+        OpenVetoWindow(lobby, outbound);
+
+        // part 2 lands well inside the veto window
+        var veto = _timings.Veto.TotalSeconds;
+        lobby.BotVetoAtUtc = DateTime.UtcNow.AddSeconds(veto * (0.3 + Random.Shared.NextDouble() * 0.3));
+    }
+
+    // Solo drama, part 2: a different bot spends a token to fake-out the accusation.
+    private void MaybeBotVeto(Lobby lobby, List<Func<Task>> outbound)
+    {
+        if (lobby.BotVetoAtUtc == null || DateTime.UtcNow < lobby.BotVetoAtUtc) return;
+        lobby.BotVetoAtUtc = null;
+        var vetoer = lobby.Players
+            .Where(p => p.IsBot && p.CanVeto && p.DisplayName != lobby.AccuserName)
+            .OrderBy(_ => Random.Shared.Next())
+            .FirstOrDefault();
+        if (vetoer == null) return;
+        ApplyVeto(lobby, vetoer, outbound);
     }
 
     private async Task RunTypingAndSubmit(Lobby lobby, string aiName, int round, string text, TimeSpan delay,
@@ -610,7 +671,7 @@ public class GameEngine : BackgroundService
         if (lobby.PriorityRound == lobby.RoundNumber && lobby.PriorityVetoerName != null)
         {
             var vetoer = lobby.FindPlayerByName(lobby.PriorityVetoerName);
-            if (vetoer != null && !vetoer.IsEliminated)
+            if (vetoer != null && !vetoer.IsEliminated && !vetoer.IsBot)
             {
                 lobby.InPriorityWindow = true;
                 lobby.PhaseDeadlineUtc = DateTime.UtcNow + _timings.Priority;
@@ -685,10 +746,11 @@ public class GameEngine : BackgroundService
             var ids = eligibleConnIds.ToList();
             outbound.Add(() => _hub.Clients.Clients(ids).SendAsync("VetoWindowOpened", deadline));
         }
-        else
+        else if (!lobby.IsSolo)
         {
             // No one can veto → resolve immediately at the deadline. Shorten the wait
             // so a game with no eligible vetoers doesn't stall for the full window.
+            // (Solo keeps the window: a bot fake-out may be scheduled inside it.)
             lobby.PhaseDeadlineUtc = DateTime.UtcNow;
         }
     }

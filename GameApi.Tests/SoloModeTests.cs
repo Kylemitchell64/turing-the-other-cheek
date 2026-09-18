@@ -66,8 +66,12 @@ public class SoloModeTests : IClassFixture<TestAppFactory>
         LobbyState? lobby = null;
         GameEnded? ended = null;
         var rounds = new HashSet<int>();
+        var fakeOuts = new List<string>();
+        var accusations = new List<(string, string)>();
         conn.On<LobbyState>("LobbyUpdated", s => lobby = s);
         conn.On<string, int, DateTime>("PromptStarted", (_, n, _) => rounds.Add(n));
+        conn.On<string, string>("AccusationMade", (a, b) => accusations.Add((a, b)));
+        conn.On<string>("FakeOutUsed", v => fakeOuts.Add(v));
         conn.On<GameEnded>("GameEnded", g => ended = g);
 
         await conn.StartAsync();
@@ -80,7 +84,22 @@ public class SoloModeTests : IClassFixture<TestAppFactory>
         Assert.Equal("AiSurvival", ended.WinType);
         Assert.Equal(5, rounds.Count); // solo cap, not the classic 8
         Assert.Equal(5, ended.Prompts.Count);
-        Assert.Empty(ended.Accusations);
+
+        // The scripted drama (forced on in tests): a bot accused someone and a DIFFERENT bot
+        // faked-out, so every accusation is "vetoed" — nothing was ever revealed — and the
+        // client saw both the accusation and the shake. Never the human as accuser/vetoer.
+        Assert.NotEmpty(ended.Accusations);
+        Assert.All(ended.Accusations, a =>
+        {
+            Assert.Equal("vetoed", a.Outcome);
+            Assert.NotNull(a.Vetoer);
+            Assert.NotEqual(a.Accuser, a.Vetoer);
+            Assert.NotEqual("Loner2", a.Accuser);
+            Assert.NotEqual("Loner2", a.Vetoer);
+        });
+        Assert.True(ended.Accusations.Count <= 2);
+        Assert.Equal(ended.Accusations.Count, accusations.Count);
+        Assert.Equal(ended.Accusations.Count, fakeOuts.Count);
         // 5 rounds x 5 seats of transcript, the AI's lines flagged only here
         Assert.Equal(25, ended.FullTranscript.Count);
         Assert.Equal(5, ended.FullTranscript.Count(m => m.IsAi));

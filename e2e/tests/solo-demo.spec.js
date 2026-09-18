@@ -52,7 +52,7 @@ test('solo demo plays five rounds against bots and ends on the recap', async ({ 
   await expect(ended).toBeVisible({ timeout: 200_000 });
 
   await expect(page.getByText('how the AI played it')).toBeVisible();
-  await expect(page.locator('.recap-row')).toHaveCount(5);
+  await expect(page.locator('.recap-rounds .recap-row')).toHaveCount(5);
   await expect(page.getByText(/solo demo — nothing saved/).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "share result" })).toBeVisible();
   // bots + the AI answer every round; only the idle human blanks r2-r5

@@ -1,0 +1,55 @@
+<!doctype html>
+<!-- Source for game-client/public/og.png (1200x630). Regenerate with:
+     npx playwright screenshot --viewport-size=1200,630 og-card.html ../game-client/public/og.png
+     (run from e2e/). Same CRT palette as the game; kept as HTML so it's editable. -->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    background: #050805;
+    font-family: "Courier New", Courier, monospace;
+    color: #c8e6c9;
+    position: relative;
+  }
+  .glow {
+    position: absolute; inset: 0;
+    background: radial-gradient(900px 500px at 50% -10%, rgba(51,255,102,0.18), transparent 70%);
+  }
+  .bezel {
+    position: absolute; inset: 28px; border: 6px solid #1f5a2c; border-radius: 26px;
+    box-shadow: 0 0 0 10px #060b06, 0 0 60px rgba(51,255,102,0.15) inset;
+  }
+  .scan {
+    position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,0.18) 0 2px, transparent 2px 5px);
+  }
+  .wrap { position: absolute; left: 80px; top: 78px; right: 80px; }
+  h1 { margin: 0; white-space: nowrap; font-size: 50px; letter-spacing: 3px; color: #33ff66; text-shadow: 0 0 18px #33ff66, 0 0 40px rgba(51,255,102,0.5); }
+  .sub { margin: 26px 0 0; font-size: 32px; line-height: 1.35; color: #c8e6c9; max-width: 980px; }
+  .sub b { color: #ff3b4e; text-shadow: 0 0 12px rgba(255,59,78,0.6); font-weight: bold; }
+  .tag { position: absolute; left: 80px; bottom: 72px; max-width: 620px; line-height: 1.4; font-size: 26px; color: #7fa88a; letter-spacing: 2px; }
+  .tag span { color: #33ff66; }
+  .seats { position: absolute; right: 90px; bottom: 72px; display: flex; gap: 22px; }
+  .seat { width: 64px; height: 84px; border-radius: 10px 10px 4px 4px; background: #163a1f; border: 3px solid #33ff66; box-shadow: 0 0 14px rgba(51,255,102,0.35); position: relative; }
+  .seat::after { content: ""; position: absolute; left: 14px; right: 14px; top: 16px; height: 14px; background: #0c1512; border-radius: 4px; }
+  .seat.ai { border-color: #ff3b4e; background: #3a1418; box-shadow: 0 0 18px rgba(255,59,78,0.5); }
+  .seat.ai::after { background: #ff3b4e; }
+  .cursor { display: inline-block; width: 18px; height: 34px; background: #33ff66; vertical-align: -4px; margin-left: 6px; }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div class="bezel"></div>
+  <div class="wrap">
+    <h1>[ TURING THE OTHER CHEEK ]</h1>
+    <p class="sub">a party game where <b>one of you is secretly an AI</b>. it learns how your group types. catch it before it outlasts you.<span class="cursor"></span></p>
+  </div>
+  <div class="tag"><span>3–8 phones</span> · free · no app · <span>solo demo</span> if you're alone</div>
+  <div class="seats">
+    <div class="seat"></div><div class="seat"></div><div class="seat ai"></div><div class="seat"></div><div class="seat"></div>
+  </div>
+  <div class="scan"></div>
+</body>
+</html>

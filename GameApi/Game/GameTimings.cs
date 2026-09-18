@@ -16,6 +16,11 @@ public class GameTimings
 
     public int MaxRounds { get; set; } = 8;
 
+    // Solo demo (phase 29): per eligible round, the chance a bot stand-in accuses someone
+    // and another bot immediately fakes-out — a scripted demo of the veto rule that leaks
+    // nothing (a veto never reveals the result). Tests set it to 1 to force it.
+    public double SoloDramaChance { get; set; } = 0.45;
+
     public TimeSpan Prompt => TimeSpan.FromSeconds(PromptSeconds);
     public TimeSpan Reveal => TimeSpan.FromSeconds(RevealSeconds);
     public TimeSpan Accusation => TimeSpan.FromSeconds(AccusationSeconds);

@@ -74,6 +74,13 @@ public class Lobby
     // Bot lines used so far this game, so no bot repeats itself.
     public HashSet<string> BotLinesUsed { get; } = new(StringComparer.Ordinal);
 
+    // Solo drama bookkeeping: which round we rolled the dice for, when the bot accusation
+    // and the bot fake-out are due, and how many dramas have played (max 2 per game).
+    public int BotDramaDecidedRound { get; set; }
+    public int BotDramaCount { get; set; }
+    public DateTime? BotAccuseAtUtc { get; set; }
+    public DateTime? BotVetoAtUtc { get; set; }
+
     // Every accusation this game and how it went — for the end-of-game recap. "vetoed"
     // entries never reveal correctness (the veto rule), so the recap can't leak either.
     public List<AccusationRecord> AccusationLog { get; } = new();
@@ -195,6 +202,10 @@ public class Lobby
         Answers.Clear();
         BotAnswerRequested.Clear();
         BotLinesUsed.Clear();
+        BotDramaDecidedRound = 0;
+        BotDramaCount = 0;
+        BotAccuseAtUtc = null;
+        BotVetoAtUtc = null;
         AccusationLog.Clear();
         RoundPrompts.Clear();
         Transcript.Clear();
