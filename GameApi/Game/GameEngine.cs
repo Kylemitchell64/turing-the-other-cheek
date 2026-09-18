@@ -26,6 +26,7 @@ public class GameEngine : BackgroundService
     private readonly StyleSummarizer _summarizer;
     private readonly GroupProfiler _groupProfiler;
     private readonly GameTimings _timings;
+    private readonly GameApi.Admin.AdminCheatState _cheats;
     private readonly ILogger<GameEngine> _logger;
 
     // Reverse mode (phase 22) runs a fixed 6 rounds regardless of the classic MaxRounds cap.
@@ -33,6 +34,49 @@ public class GameEngine : BackgroundService
 
     // Solo demo (phase 29) caps at 5 rounds — long enough to get a read, short enough to demo.
     private const int SoloRounds = 5;
+
+    // Admin self-check (phase 30): 2 rounds on compressed windows, whole chain in ~30s.
+    private const int SelfCheckRounds = 2;
+    private static readonly GameTimings SelfCheckTimings = new()
+    {
+        PromptSeconds = 8, RevealSeconds = 1, AccusationSeconds = 3, VetoSeconds = 2, PrioritySeconds = 1,
+        MaxRounds = SelfCheckRounds, SoloDramaChance = 1.0,
+    };
+
+    // The timings a given lobby runs on: the configured set, or the self-check's fast set.
+    private GameTimings TimingsFor(Lobby lobby) => lobby.IsSelfCheck ? SelfCheckTimings : _timings;
+
+    // How long a lobby may sit with no human connected before it's dropped (mid-game). A
+    // finished game with nobody attached goes at once. Pre-game lobbies are already dropped
+    // by the hub on the last disconnect.
+    private static readonly TimeSpan EmptyLobbyGrace = TimeSpan.FromMinutes(10);
+    private DateTime _nextSweepUtc = DateTime.MinValue;
+
+    // Dead-lobby sweep (phase 30). Lobby + game state lives in memory for the life of the
+    // process; before this, every finished or abandoned game stayed in the store forever.
+    private void SweepDeadLobbies()
+    {
+        var now = DateTime.UtcNow;
+        if (now < _nextSweepUtc) return;
+        _nextSweepUtc = now + TimeSpan.FromSeconds(30);
+
+        foreach (var lobby in _store.All)
+        {
+            bool drop;
+            lock (lobby.Sync)
+            {
+                if (lobby.IsSelfCheck) continue;
+                var anyHuman = lobby.Players.Any(p => !p.IsBot && p.IsConnected);
+                if (anyHuman) { lobby.EmptySinceUtc = null; continue; }
+                lobby.EmptySinceUtc ??= now;
+                drop = lobby.State == GameState.Ended
+                    || lobby.State == GameState.Lobby
+                    || now - lobby.EmptySinceUtc.Value > EmptyLobbyGrace;
+            }
+            if (drop && _store.Remove(lobby.Code))
+                _logger.LogInformation("Swept empty lobby {Code} ({State})", lobby.Code, lobby.State);
+        }
+    }
 
     // Upper bound the reverse reveal waits on the attribution task before advancing anyway.
     // The guesser always returns fast (it random-falls-back internally), so this is only a
@@ -48,8 +92,10 @@ public class GameEngine : BackgroundService
         StyleSummarizer summarizer,
         GroupProfiler groupProfiler,
         GameTimings timings,
+        GameApi.Admin.AdminCheatState cheats,
         ILogger<GameEngine> logger)
     {
+        _cheats = cheats;
         _store = store;
         _hub = hub;
         _brain = brain;
@@ -70,6 +116,7 @@ public class GameEngine : BackgroundService
             {
                 foreach (var lobby in _store.All)
                     await TickLobbyAsync(lobby, stoppingToken);
+                SweepDeadLobbies();
             }
             catch (Exception ex)
             {
@@ -246,7 +293,7 @@ public class GameEngine : BackgroundService
     // defers to configured GameTimings so the compressed test timings keep working.
     private TimeSpan PromptWindow(Lobby lobby) =>
         lobby.PaceKey == PaceOptions.DefaultKey
-            ? _timings.Prompt
+            ? TimingsFor(lobby).Prompt
             : TimeSpan.FromSeconds(PaceOptions.WindowSeconds(lobby.PaceKey));
 
     // Fire the AI's answer task once per round, in the background. The brain returns
@@ -354,7 +401,7 @@ public class GameEngine : BackgroundService
         if (lobby.BotDramaDecidedRound != lobby.RoundNumber)
         {
             lobby.BotDramaDecidedRound = lobby.RoundNumber;
-            if (Random.Shared.NextDouble() < _timings.SoloDramaChance)
+            if (Random.Shared.NextDouble() < TimingsFor(lobby).SoloDramaChance)
             {
                 var window = Math.Max(0.5, (lobby.PhaseDeadlineUtc - DateTime.UtcNow).TotalSeconds);
                 var at = Math.Min(window * 0.6, 3.0 + Random.Shared.NextDouble() * 4.0);
@@ -379,7 +426,7 @@ public class GameEngine : BackgroundService
         OpenVetoWindow(lobby, outbound);
 
         // part 2 lands well inside the veto window
-        var veto = _timings.Veto.TotalSeconds;
+        var veto = TimingsFor(lobby).Veto.TotalSeconds;
         lobby.BotVetoAtUtc = DateTime.UtcNow.AddSeconds(veto * (0.3 + Random.Shared.NextDouble() * 0.3));
     }
 
@@ -493,7 +540,7 @@ public class GameEngine : BackgroundService
             EnsureAnswerFor(lobby, p.DisplayName, isAi: false, authorUserId: p.UserId);
 
         lobby.State = GameState.Revealing;
-        lobby.PhaseDeadlineUtc = DateTime.UtcNow + _timings.Reveal;
+        lobby.PhaseDeadlineUtc = DateTime.UtcNow + TimingsFor(lobby).Reveal;
 
         // Reveal order randomized so slot position leaks nothing about the AI.
         var revealed = lobby.Answers
@@ -632,7 +679,7 @@ public class GameEngine : BackgroundService
             lobby.ReverseTotal += roundTotal;
 
             // Guesses are in — give players a fixed window to read them, then the tick advances.
-            lobby.PhaseDeadlineUtc = DateTime.UtcNow + _timings.Reveal;
+            lobby.PhaseDeadlineUtc = DateTime.UtcNow + TimingsFor(lobby).Reveal;
 
             dto = new AiGuessesRevealedDto(
                 round, revealed, roundCorrect, roundTotal, lobby.ReverseCorrect, lobby.ReverseTotal);
@@ -662,7 +709,7 @@ public class GameEngine : BackgroundService
         if (lobby.BlackoutRound == lobby.RoundNumber)
         {
             lobby.InPriorityWindow = false;
-            lobby.PhaseDeadlineUtc = DateTime.UtcNow + _timings.Reveal; // brief pause, no window opened
+            lobby.PhaseDeadlineUtc = DateTime.UtcNow + TimingsFor(lobby).Reveal; // brief pause, no window opened
             // No AccusationWindowOpened event — clients show no accuse UI this round.
             return;
         }
@@ -674,7 +721,7 @@ public class GameEngine : BackgroundService
             if (vetoer != null && !vetoer.IsEliminated && !vetoer.IsBot)
             {
                 lobby.InPriorityWindow = true;
-                lobby.PhaseDeadlineUtc = DateTime.UtcNow + _timings.Priority;
+                lobby.PhaseDeadlineUtc = DateTime.UtcNow + TimingsFor(lobby).Priority;
                 var deadline = lobby.PhaseDeadlineUtc;
                 var priorityName = lobby.PriorityVetoerName;
                 outbound.Add(() => _hub.Clients.Group(code)
@@ -697,7 +744,7 @@ public class GameEngine : BackgroundService
             lobby.PriorityVetoerName = null;
         }
 
-        lobby.PhaseDeadlineUtc = DateTime.UtcNow + _timings.Accusation;
+        lobby.PhaseDeadlineUtc = DateTime.UtcNow + TimingsFor(lobby).Accusation;
         var deadline = lobby.PhaseDeadlineUtc;
         var code = lobby.Code;
         outbound.Add(() => _hub.Clients.Group(code)
@@ -733,7 +780,7 @@ public class GameEngine : BackgroundService
             eligibleConnIds.AddRange(p.ConnectionIds);
         }
 
-        lobby.PhaseDeadlineUtc = DateTime.UtcNow + _timings.Veto;
+        lobby.PhaseDeadlineUtc = DateTime.UtcNow + TimingsFor(lobby).Veto;
         var deadline = lobby.PhaseDeadlineUtc;
 
         // AccusationMade goes to everyone; VetoWindowOpened only to eligible vetoers.
@@ -758,7 +805,8 @@ public class GameEngine : BackgroundService
     // Called by the hub (under lock) when someone uses a fake-out during the window.
     public void ApplyVeto(Lobby lobby, LobbyPlayer vetoer, List<Func<Task>> outbound)
     {
-        vetoer.TokensRemaining--;
+        if (!(vetoer.IsAdmin && _cheats.InfiniteTokens)) // operator cheat: free fake-outs
+            vetoer.TokensRemaining--;
         vetoer.VetoerCount++;
 
         // Result is NEVER revealed. One full round plays with no accusation window,
@@ -817,7 +865,8 @@ public class GameEngine : BackgroundService
         {
             // Track for TimesFooled: a wrong accusation counts if the AI ends up surviving.
             lobby.WrongAccuserUserIds.Add(loser.UserId);
-            loser.TokensRemaining = Math.Max(0, loser.TokensRemaining - 1);
+            if (!(loser.IsAdmin && _cheats.InfiniteTokens)) // operator cheat: wrong guesses are free
+                loser.TokensRemaining = Math.Max(0, loser.TokensRemaining - 1);
             if (loser.TokensRemaining == 0 && !loser.IsEliminated)
             {
                 loser.IsEliminated = true;
@@ -843,6 +892,7 @@ public class GameEngine : BackgroundService
     {
         var cap = GameModes.IsReverse(lobby.Mode) ? ReverseRounds : _timings.MaxRounds;
         if (lobby.IsSolo) cap = Math.Min(cap, SoloRounds); // demo games stay short
+        if (lobby.IsSelfCheck) cap = SelfCheckRounds;
         if (lobby.RoundNumber >= cap)
         {
             if (GameModes.IsReverse(lobby.Mode))

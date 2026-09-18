@@ -68,6 +68,17 @@ public class Lobby
     // Solo games are shorter (5 rounds) and are NOT persisted — they're a demo, not a stat.
     public bool IsSolo { get; set; }
 
+    // Admin self-check (phase 30): a synthetic solo game the SelfCheckService drives with
+    // very short windows and a 2-round cap. Never persisted, removed by the service itself,
+    // and skipped by the dead-lobby sweep.
+    public bool IsSelfCheck { get; set; }
+
+    // Dead-lobby sweep (phase 30): when the last human socket drops this is stamped; the
+    // engine removes the lobby once it's been empty long enough (immediately if the game
+    // is over). Cleared the moment anyone is connected again.
+    public DateTime? EmptySinceUtc { get; set; }
+    public DateTime CreatedAtUtc { get; } = DateTime.UtcNow;
+
     // Which bots have had their answer task fired this round (mirror of AiAnswerRequested).
     public HashSet<string> BotAnswerRequested { get; } = new(StringComparer.Ordinal);
 
@@ -284,6 +295,10 @@ public class LobbyPlayer
     // Solo-demo stand-in (phase 29). Answers prompts, never accuses/vetoes, never persisted.
     // Counts as "connected" so the roster doesn't show an empty seat.
     public bool IsBot { get; init; }
+
+    // The seat's JWT carried isAdmin=true (phase 30). Only used to route operator cheats;
+    // never serialized to anyone.
+    public bool IsAdmin { get; init; }
 
     // The player's saved character JSON, cached from the DB when they take a seat, so the
     // roster payloads can carry a config without a DB hit per broadcast. Null == none

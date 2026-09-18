@@ -40,7 +40,7 @@ export default function GamePage() {
   const {
     roster, phase, round, reveal, reverseReveal, aiGuesses, mode, accusation, accusationMade,
     vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, history,
-    tokens, clockSkew, typing, lobby, answeredRound,
+    tokens, clockSkew, typing, lobby, answeredRound, cheatAiName,
     leaveLobby, submitAnswer, makeAccusation, useFakeOut: sendFakeOut, startGame, startSoloGame,
     setTypingState,
   } = useLobby();
@@ -231,6 +231,11 @@ export default function GamePage() {
                     ? aiGuesses ? "[ THE VERDICT ]" : "[ ANALYZING ]"
                     : "[ REVEAL ]"}
           </div>
+          {cheatAiName && (
+            <div className="cheat-badge" title="operator cheat: reveal AI is on">
+              [ CHEAT ] the AI is <b>{cheatAiName}</b>
+            </div>
+          )}
 
           {/* PODIUM ROW — one chibi per roster member, the focal point */}
           <div className="podium-row">

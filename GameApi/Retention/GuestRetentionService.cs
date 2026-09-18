@@ -77,6 +77,13 @@ public class GuestRetentionService : BackgroundService
             .Select(u => u.Id)
             .ToListAsync(ct);
 
+        return await PurgeUsersAsync(db, staleIds, ct);
+    }
+
+    // Hard-delete these accounts and everything hanging off them, preserving transcripts
+    // (author links are nulled, rows stay). Shared with the admin cleanup (phase 30).
+    public static async Task<int> PurgeUsersAsync(GameContext db, List<string> staleIds, CancellationToken ct = default)
+    {
         if (staleIds.Count == 0) return 0;
 
         foreach (var id in staleIds)

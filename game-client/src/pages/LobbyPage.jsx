@@ -6,7 +6,6 @@ import { PACKS, packFor } from "../game/packs";
 import PackMakerModal from "../components/PackMakerModal";
 import MenuWanderer from "../components/MenuWanderer";
 import ReconnectBanner from "../components/ReconnectBanner";
-import QRCode from "qrcode";
 
 // Impostor difficulty + answer pace options. Keys must match the server's
 // DifficultyProfile / PaceOptions keys exactly.
@@ -52,7 +51,9 @@ export default function LobbyPage() {
     if (!qrCode || qrIsCrew) { setQr(null); return; }
     let alive = true;
     const url = `${window.location.origin}/login?join=${encodeURIComponent(qrCode)}`;
-    QRCode.toDataURL(url, { margin: 1, width: 220, color: { dark: "#33ff66", light: "#00000000" } })
+    // dynamic import: the encoder is ~40KB and only lobby hosts need it
+    import("qrcode")
+      .then((mod) => (mod.default || mod).toDataURL(url, { margin: 1, width: 220, color: { dark: "#33ff66", light: "#00000000" } }))
       .then((data) => { if (alive) setQr(data); })
       .catch(() => { if (alive) setQr(null); });
     return () => { alive = false; };

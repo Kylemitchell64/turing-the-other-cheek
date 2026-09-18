@@ -28,6 +28,8 @@ public class AdminController : ControllerBase
     private readonly IConfiguration _config;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly ILogger<AdminController> _logger;
+    private readonly SelfCheckService _selfCheck;
+    private readonly AdminCheatState _cheats;
 
     public AdminController(
         GameContext db,
@@ -37,8 +39,12 @@ public class AdminController : ControllerBase
         AiProviderStats aiStats,
         IConfiguration config,
         IHostApplicationLifetime lifetime,
+        SelfCheckService selfCheck,
+        AdminCheatState cheats,
         ILogger<AdminController> logger)
     {
+        _selfCheck = selfCheck;
+        _cheats = cheats;
         _db = db;
         _userManager = userManager;
         _maintenance = maintenance;
@@ -187,16 +193,22 @@ public class AdminController : ControllerBase
         _ => 1000
     };
 
-    // GET /api/admin/users?search=&page=1&pageSize=20 — searchable, paged directory. Each
-    // row carries the account tier, last-seen, games played, an estimated data-usage figure
-    // (relative to the heaviest user, for a bar), and the rewards they currently hold.
+    // GET /api/admin/users?search=&filter=&sort=&page=1&pageSize=20 — searchable, filterable,
+    // sortable, paged directory (phase 30). Each row carries the account tier, last-seen,
+    // games played, the account's stored bytes (samples + messages + profile + character,
+    // plus a flat row overhead) and the rewards held.
+    //   filter: all | inactive (no sign-in for 30+ days) | guests | oauth |
+    //           safe-delete (guest, never played, no samples, not seen in 24h — probes and
+    //           abandoned quick-plays; deleting them loses nothing)
+    //   sort:   lastSeen (default) | storage | games | name | created
     [HttpGet("users")]
-    public async Task<IActionResult> Users(string? search, int page = 1, int pageSize = 20)
+    public async Task<IActionResult> Users(string? search, string? filter, string? sort, int page = 1, int pageSize = 20)
     {
         if (page < 1) page = 1;
         pageSize = Math.Clamp(pageSize, 1, 100);
+        var now = DateTime.UtcNow;
 
-        var query = _db.Users.AsQueryable();
+        var query = _db.Users.AsNoTracking().AsQueryable();
         if (!string.IsNullOrWhiteSpace(search))
         {
             var s = search.Trim().ToLower();
@@ -205,47 +217,49 @@ public class AdminController : ControllerBase
                 (u.UserName != null && u.UserName.ToLower().Contains(s)));
         }
 
-        var total = await query.CountAsync();
-
-        var pageUsers = await query
-            .OrderByDescending(u => u.LastSeenUtc ?? DateTime.MinValue)
-            .ThenBy(u => u.UserName)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Select(u => new
-            {
-                u.Id,
-                u.DisplayName,
-                u.UserName,
-                u.Email,
-                u.IsGuest,
-                u.ExternalProvider,
-                u.LastSeenUtc
-            })
+        // Small table (free tier): pull the candidate rows, then join the per-user tallies
+        // in memory. Every tally is one grouped query, not one per user.
+        var all = await query
+            .Select(u => new { u.Id, u.DisplayName, u.UserName, u.Email, u.IsGuest, u.ExternalProvider, u.LastSeenUtc,
+                CharBytes = u.CharacterJson == null ? 0 : u.CharacterJson.Length })
             .ToListAsync();
 
-        var ids = pageUsers.Select(u => u.Id).ToList();
+        var tallies = await UserTalliesAsync(all.Select(u => u.Id).ToList());
 
-        // Data-usage estimate: total stored writing-sample bytes per user. The bar on the
-        // client is relative to the global max, so heavy accounts stand out.
-        var usageByUser = (await _db.WritingSamples
-                .Where(s => ids.Contains(s.UserId))
-                .GroupBy(s => s.UserId)
-                .Select(g => new { UserId = g.Key, Bytes = g.Sum(s => s.Text.Length) })
-                .ToListAsync())
-            .ToDictionary(x => x.UserId, x => (long)x.Bytes);
+        var rows = all.Select(u =>
+        {
+            var t = tallies.TryGetValue(u.Id, out var tt) ? tt : new UserTally();
+            var storage = t.SampleBytes + t.MessageBytes + t.ProfileBytes + u.CharBytes + 512L;
+            var safeDelete = u.IsGuest && t.Games == 0 && t.Samples == 0
+                && (u.LastSeenUtc == null || u.LastSeenUtc < now.AddHours(-24));
+            return new UserRow(
+                u.Id, u.DisplayName ?? u.UserName ?? "?", u.UserName ?? "", u.IsGuest, u.ExternalProvider,
+                TierOf(u.IsGuest, u.ExternalProvider, u.Email), u.LastSeenUtc, t.Games, storage, t.Samples,
+                t.MessageBytes, safeDelete);
+        });
 
-        var maxDataUsage = await _db.WritingSamples
-            .GroupBy(s => s.UserId)
-            .Select(g => g.Sum(s => s.Text.Length))
-            .OrderByDescending(x => x)
-            .FirstOrDefaultAsync();
+        rows = (filter ?? "all").ToLowerInvariant() switch
+        {
+            "inactive" => rows.Where(r => r.LastSeen == null || r.LastSeen < now.AddDays(-30)),
+            "guests" => rows.Where(r => r.IsGuest),
+            "oauth" => rows.Where(r => !string.IsNullOrEmpty(r.ExternalProvider)),
+            "safe-delete" => rows.Where(r => r.SafeDelete),
+            _ => rows,
+        };
 
-        var gamesByUser = (await _db.PlayerStats
-                .Where(p => ids.Contains(p.UserId))
-                .Select(p => new { p.UserId, p.GamesPlayed })
-                .ToListAsync())
-            .ToDictionary(x => x.UserId, x => x.GamesPlayed);
+        rows = (sort ?? "lastseen").ToLowerInvariant() switch
+        {
+            "storage" => rows.OrderByDescending(r => r.StorageBytes).ThenBy(r => r.Username),
+            "games" => rows.OrderByDescending(r => r.GamesPlayed).ThenBy(r => r.Username),
+            "name" => rows.OrderBy(r => r.DisplayName, StringComparer.OrdinalIgnoreCase),
+            _ => rows.OrderByDescending(r => r.LastSeen ?? DateTime.MinValue).ThenBy(r => r.Username),
+        };
+
+        var list = rows.ToList();
+        var total = list.Count;
+        var pageRows = list.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        var ids = pageRows.Select(r => r.Id).ToList();
+        var maxStorage = list.Count == 0 ? 0 : list.Max(r => r.StorageBytes);
 
         var rewardsByUser = (await _db.UserRewards
                 .AsNoTracking()
@@ -254,19 +268,153 @@ public class AdminController : ControllerBase
             .GroupBy(r => r.UserId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
-        var rows = pageUsers.Select(u => new
+        var users = pageRows.Select(r => new
         {
-            id = u.Id,
-            displayName = u.DisplayName ?? u.UserName,
-            username = u.UserName,
-            tier = TierOf(u.IsGuest, u.ExternalProvider, u.Email),
-            lastSeen = u.LastSeenUtc,
-            gamesPlayed = gamesByUser.TryGetValue(u.Id, out var g) ? g : 0,
-            dataUsage = usageByUser.TryGetValue(u.Id, out var b) ? b : 0L,
-            rewards = SummarizeRewards(rewardsByUser.TryGetValue(u.Id, out var rl) ? rl : new List<UserReward>())
+            id = r.Id,
+            displayName = r.DisplayName,
+            username = r.Username,
+            tier = r.Tier,
+            lastSeen = r.LastSeen,
+            gamesPlayed = r.GamesPlayed,
+            dataUsage = r.StorageBytes,
+            samples = r.Samples,
+            safeDelete = r.SafeDelete,
+            rewards = SummarizeRewards(rewardsByUser.TryGetValue(r.Id, out var rl) ? rl : new List<UserReward>())
         });
 
-        return Ok(new { page, pageSize, total, maxDataUsage = (long)maxDataUsage, users = rows });
+        return Ok(new { page, pageSize, total, maxDataUsage = maxStorage, users });
+    }
+
+    private sealed record UserRow(
+        string Id, string DisplayName, string Username, bool IsGuest, string? ExternalProvider, string Tier,
+        DateTime? LastSeen, int GamesPlayed, long StorageBytes, int Samples, long MessageBytes, bool SafeDelete);
+
+    private sealed class UserTally
+    {
+        public int Games; public int Samples; public long SampleBytes; public long MessageBytes; public long ProfileBytes;
+    }
+
+    // Per-user counts + bytes in four grouped queries (samples, messages, profiles, stats).
+    private async Task<Dictionary<string, UserTally>> UserTalliesAsync(List<string> ids)
+    {
+        var t = new Dictionary<string, UserTally>(StringComparer.Ordinal);
+        UserTally For(string id) { if (!t.TryGetValue(id, out var x)) { x = new UserTally(); t[id] = x; } return x; }
+
+        foreach (var g in await _db.WritingSamples.AsNoTracking().Where(s => ids.Contains(s.UserId))
+                     .GroupBy(s => s.UserId).Select(g => new { g.Key, N = g.Count(), B = g.Sum(s => s.Text.Length) }).ToListAsync())
+        { var x = For(g.Key); x.Samples = g.N; x.SampleBytes = g.B; }
+
+        foreach (var g in await _db.GameMessages.AsNoTracking().Where(m => m.AuthorUserId != null && ids.Contains(m.AuthorUserId))
+                     .GroupBy(m => m.AuthorUserId!).Select(g => new { g.Key, B = g.Sum(m => m.Text.Length) }).ToListAsync())
+        { For(g.Key).MessageBytes = g.B; }
+
+        foreach (var p in await _db.StyleProfiles.AsNoTracking().Where(p => ids.Contains(p.UserId))
+                     .Select(p => new { p.UserId, B = p.SummaryJson == null ? 0 : p.SummaryJson.Length }).ToListAsync())
+        { For(p.UserId).ProfileBytes += p.B; }
+
+        foreach (var p in await _db.PlayerStats.AsNoTracking().Where(p => ids.Contains(p.UserId))
+                     .Select(p => new { p.UserId, p.GamesPlayed }).ToListAsync())
+        { For(p.UserId).Games = p.GamesPlayed; }
+
+        return t;
+    }
+
+    // ---- cleanup (phase 30) ----
+    // POST /api/admin/cleanup { dryRun, confirm } — freshen the app without touching anything a
+    // real player would miss:
+    //   safeDelete   guests that never played, have no samples and haven't been seen in 24h
+    //   staleGuests  the daily retention rule, run now (guests idle 30+ days)
+    //   oldRewards   consumed rewards older than 90 days
+    //   deadLobbies  in-memory lobbies with no human attached (ended, or empty 10+ min)
+    // dryRun=true only counts. A real run needs confirm == "CLEANUP".
+    [HttpPost("cleanup")]
+    public async Task<IActionResult> Cleanup([FromBody] CleanupRequest req)
+    {
+        var dry = req?.DryRun ?? true;
+        if (!dry && !string.Equals(req?.Confirm, CleanupConfirmPhrase, StringComparison.Ordinal))
+            return BadRequest(new { error = $"type {CleanupConfirmPhrase} to confirm" });
+
+        var now = DateTime.UtcNow;
+
+        // safe-delete candidates
+        var guestIds = await _db.Users.AsNoTracking()
+            .Where(u => u.IsGuest && (u.LastSeenUtc == null || u.LastSeenUtc < now.AddHours(-24)))
+            .Select(u => u.Id).ToListAsync();
+        var withGames = await _db.PlayerStats.AsNoTracking().Where(p => guestIds.Contains(p.UserId) && p.GamesPlayed > 0)
+            .Select(p => p.UserId).ToListAsync();
+        var withSamples = await _db.WritingSamples.AsNoTracking().Where(s => guestIds.Contains(s.UserId))
+            .Select(s => s.UserId).Distinct().ToListAsync();
+        var safeIds = guestIds.Except(withGames).Except(withSamples).ToList();
+
+        // stale guests per retention (excluding the safe set so we don't double count)
+        var retentionDays = _config.GetValue<int?>("Retention:GuestDays") ?? 30;
+        var staleIds = await _db.Users.AsNoTracking()
+            .Where(u => u.IsGuest && u.LastSeenUtc != null && u.LastSeenUtc < now.AddDays(-retentionDays))
+            .Select(u => u.Id).ToListAsync();
+        staleIds = staleIds.Except(safeIds).ToList();
+
+        var oldRewards = await _db.UserRewards.Where(r => r.ConsumedAt != null && r.ConsumedAt < now.AddDays(-90)).ToListAsync();
+
+        var deadLobbies = new List<string>();
+        foreach (var l in _lobbies.All)
+        {
+            lock (l.Sync)
+            {
+                if (l.IsSelfCheck) continue;
+                var anyHuman = l.Players.Any(p => !p.IsBot && p.IsConnected);
+                if (!anyHuman) deadLobbies.Add(l.Code);
+            }
+        }
+
+        var report = new
+        {
+            dryRun = dry,
+            safeDelete = safeIds.Count,
+            staleGuests = staleIds.Count,
+            oldRewards = oldRewards.Count,
+            deadLobbies = deadLobbies.Count,
+        };
+        if (dry) return Ok(report);
+
+        var removedUsers = await GameApi.Retention.GuestRetentionService.PurgeUsersAsync(_db, safeIds.Concat(staleIds).ToList());
+        _db.UserRewards.RemoveRange(oldRewards);
+        await _db.SaveChangesAsync();
+        var removedLobbies = deadLobbies.Count(code => _lobbies.Remove(code));
+
+        _logger.LogWarning("Admin cleanup: {Users} accounts, {Rewards} rewards, {Lobbies} lobbies removed",
+            removedUsers, oldRewards.Count, removedLobbies);
+        return Ok(new { report.dryRun, report.safeDelete, report.staleGuests, report.oldRewards, deadLobbies = removedLobbies, removedUsers });
+    }
+
+    private const string CleanupConfirmPhrase = "CLEANUP";
+
+    // ---- self-check (phase 30) ----
+    // POST /api/admin/selfcheck — start a run (409 if one is going). GET — the current run.
+    [HttpPost("selfcheck")]
+    public IActionResult StartSelfCheck()
+    {
+        if (!_selfCheck.Start()) return Conflict(new { error = "a self-check is already running" });
+        return Ok(_selfCheck.Snapshot());
+    }
+
+    [HttpGet("selfcheck")]
+    public IActionResult SelfCheck() => Ok(_selfCheck.Snapshot() ?? new SelfCheckService.Run("", DateTime.MinValue, null, false, new()));
+
+    // ---- operator cheats (phase 30) ----
+    [HttpGet("cheats")]
+    public IActionResult Cheats()
+    {
+        var (reveal, tokens) = _cheats.Snapshot();
+        return Ok(new { revealAi = reveal, infiniteTokens = tokens });
+    }
+
+    [HttpPost("cheats")]
+    public IActionResult SetCheats([FromBody] CheatsRequest req)
+    {
+        _cheats.Set(req?.RevealAi, req?.InfiniteTokens);
+        var (reveal, tokens) = _cheats.Snapshot();
+        _logger.LogWarning("Admin cheats: revealAi={Reveal} infiniteTokens={Tokens}", reveal, tokens);
+        return Ok(new { revealAi = reveal, infiniteTokens = tokens });
     }
 
     // GET /api/admin/users/{id} — the per-user synopsis behind a clicked row. Everything the
@@ -563,4 +711,6 @@ public class AdminController : ControllerBase
     public record GrantRewardRequest(string? Kind);
     public record MaintenanceRequest(bool On, string? Message);
     public record WipeRequest(string? Confirm);
+    public record CleanupRequest(bool? DryRun, string? Confirm);
+    public record CheatsRequest(bool? RevealAi, bool? InfiniteTokens);
 }

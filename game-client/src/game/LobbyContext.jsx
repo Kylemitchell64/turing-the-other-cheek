@@ -38,6 +38,9 @@ export function LobbyProvider({ children }) {
   // Phase 29: after a Rejoin snapshot says we already answered the current round, this holds
   // that round number so the Game screen shows "sent" instead of an empty box.
   const [answeredRound, setAnsweredRound] = useState(null);
+  // Operator cheat (phase 30): the AI's name, delivered privately to an admin seat when the
+  // console has "reveal AI" on. Null for everyone else, always.
+  const [cheatAiName, setCheatAiName] = useState(null);
   const [events, setEvents] = useState([]); // a simple scrolling event log for manual testing
 
   // Host-picked lobby options (pack / impostor difficulty / answer pace). Seeded from
@@ -122,7 +125,10 @@ export function LobbyProvider({ children }) {
         log(`options set to ${custom ? `custom:${custom}` : pack} / ${diff} / ${pace} / ${m ?? "classic"}`);
       });
 
+      conn.on("CheatReveal", (name) => setCheatAiName(name));
+
       conn.on("GameStarted", (r) => {
+        setCheatAiName(null);
         setRoster(r);
         setPhase("prompting");
         setEnded(null);
@@ -294,6 +300,7 @@ export function LobbyProvider({ children }) {
       return;
     }
     setRoster(snap.roster || null);
+    setCheatAiName(snap.cheatAiName || null);
     setTokens(snap.tokens || {});
     setEliminated(snap.eliminated || []);
     setHistory(snap.history || []);
@@ -499,6 +506,7 @@ export function LobbyProvider({ children }) {
     setWrongAccusers([]);
     setEnded(null);
     setAnsweredRound(null);
+    setCheatAiName(null);
     setEvents([]);
     setHistory([]);
     setTokens({});
@@ -520,7 +528,7 @@ export function LobbyProvider({ children }) {
   const value = {
     status, lobby, crewCode, roster, error, setError,
     round, phase, reveal, reverseReveal, aiGuesses, accusation, accusationMade,
-    vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, events, answeredRound,
+    vetoWindow, fakeOut, resolved, eliminated, wrongAccusers, ended, events, answeredRound, cheatAiName,
     tokens, clockSkew, history, packKey, difficulty, paceKey, mode, customPackName, typing,
     musicMood, setLobbyMusic,
     createLobby, joinLobby, createCrewLobby, setCrewCode, startGame, startSoloGame, playSolo, setLobbyOptions, setCustomPack, leaveLobby,

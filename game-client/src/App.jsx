@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
 import ProtectedRoute from "./auth/ProtectedRoute";
 import MusicWidget from "./components/MusicWidget";
@@ -10,7 +11,8 @@ import LobbyPage from "./pages/LobbyPage";
 import GamePage from "./pages/GamePage";
 import WritingSamplesPage from "./pages/WritingSamplesPage";
 import StatsPage from "./pages/StatsPage";
-import AdminPage from "./pages/AdminPage";
+// Operator-only: split out of the main bundle so players never download it.
+const AdminPage = lazy(() => import("./pages/AdminPage"));
 
 export default function App() {
   return (
@@ -78,7 +80,7 @@ export default function App() {
         path="/admin"
         element={
           <ProtectedRoute>
-            <AdminPage />
+            <Suspense fallback={<div className="screen center"><p className="soon">// loading console…</p></div>}><AdminPage /></Suspense>
           </ProtectedRoute>
         }
       />

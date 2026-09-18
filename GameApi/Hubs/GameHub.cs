@@ -28,9 +28,12 @@ public class GameHub : Hub
     private readonly PackCodec _packCodec;
     private readonly ILogger<GameHub> _logger;
 
+    private readonly AdminCheatState _cheats;
+
     public GameHub(LobbyStore store, GameEngine engine, GameContext db, MaintenanceState maintenance,
-        IServiceScopeFactory scopeFactory, PackCodec packCodec, ILogger<GameHub> logger)
+        IServiceScopeFactory scopeFactory, PackCodec packCodec, AdminCheatState cheats, ILogger<GameHub> logger)
     {
+        _cheats = cheats;
         _store = store;
         _engine = engine;
         _db = db;
@@ -60,6 +63,9 @@ public class GameHub : Hub
         ?? Context.User?.FindFirstValue(ClaimTypes.Name)
         ?? "player";
 
+    private bool IsAdminCaller =>
+        string.Equals(Context.User?.FindFirstValue("isAdmin"), "true", StringComparison.OrdinalIgnoreCase);
+
     private bool IsGuestCaller =>
         string.Equals(Context.User?.FindFirstValue("isGuest"), "true", StringComparison.OrdinalIgnoreCase);
 
@@ -72,7 +78,7 @@ public class GameHub : Hub
 
         lock (lobby.Sync)
         {
-            var player = new LobbyPlayer { UserId = UserId, DisplayName = DisplayName, CharacterJson = characterJson };
+            var player = new LobbyPlayer { UserId = UserId, DisplayName = DisplayName, IsAdmin = IsAdminCaller, CharacterJson = characterJson };
             player.ConnectionIds.Add(Context.ConnectionId);
             lobby.Players.Add(player);
         }
@@ -124,7 +130,7 @@ public class GameHub : Hub
                         lobby.PackKey = PromptPacks.DefaultKey;
                 }
 
-                var player = new LobbyPlayer { UserId = UserId, DisplayName = DisplayName, CharacterJson = characterJson };
+                var player = new LobbyPlayer { UserId = UserId, DisplayName = DisplayName, IsAdmin = IsAdminCaller, CharacterJson = characterJson };
                 player.ConnectionIds.Add(Context.ConnectionId);
                 lobby.Players.Add(player);
             }
@@ -144,7 +150,7 @@ public class GameHub : Hub
                 }
                 else
                 {
-                    var player = new LobbyPlayer { UserId = UserId, DisplayName = DisplayName, CharacterJson = characterJson };
+                    var player = new LobbyPlayer { UserId = UserId, DisplayName = DisplayName, IsAdmin = IsAdminCaller, CharacterJson = characterJson };
                     player.ConnectionIds.Add(Context.ConnectionId);
                     lobby.Players.Add(player);
                 }
@@ -211,7 +217,7 @@ public class GameHub : Hub
             }
             else
             {
-                var player = new LobbyPlayer { UserId = UserId, DisplayName = DisplayName, CharacterJson = characterJson };
+                var player = new LobbyPlayer { UserId = UserId, DisplayName = DisplayName, IsAdmin = IsAdminCaller, CharacterJson = characterJson };
                 player.ConnectionIds.Add(Context.ConnectionId);
                 lobby.Players.Add(player);
             }
@@ -369,8 +375,24 @@ public class GameHub : Hub
 
         _logger.LogInformation("Lobby {Code} started with {Count} in roster", lobby.Code, roster.Count);
         await Clients.Group(lobby.Code).SendAsync("GameStarted", roster);
+        await SendCheatRevealAsync(lobby);
         foreach (var send in outbound)
             await send();
+    }
+
+    // Operator cheat (phase 30): if RevealAi is on, admin seats — and only their own
+    // connections — get the AI's fake name privately. No broadcast payload changes.
+    private async Task SendCheatRevealAsync(Lobby lobby)
+    {
+        if (!_cheats.RevealAi) return;
+        List<string> ids; string? ai;
+        lock (lobby.Sync)
+        {
+            ai = lobby.AiDisplayName;
+            ids = lobby.Players.Where(p => p.IsAdmin).SelectMany(p => p.ConnectionIds).ToList();
+        }
+        if (ai != null && ids.Count > 0)
+            await Clients.Clients(ids).SendAsync("CheatReveal", ai);
     }
 
     // Phone lock / tab sleep dropped the socket: reattach this NEW connection to the seat the
@@ -394,6 +416,8 @@ public class GameHub : Hub
             var me = mine.FindPlayer(UserId)!;
             me.ConnectionIds.Add(Context.ConnectionId);
             snapshot = _engine.BuildResync(mine, me, BuildLobbyDto(mine));
+            if (_cheats.RevealAi && me.IsAdmin && mine.AiDisplayName != null)
+                snapshot = snapshot with { CheatAiName = mine.AiDisplayName };
         }
         await Groups.AddToGroupAsync(Context.ConnectionId, mine.Code);
         _logger.LogInformation("{User} rejoined lobby {Code}", UserId, mine.Code);

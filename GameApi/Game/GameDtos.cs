@@ -55,7 +55,9 @@ public record ResyncDto(
     bool CanVetoNow,
     List<string> Eliminated,
     Dictionary<string, int> Tokens,
-    GameEndedDto? Ended);
+    GameEndedDto? Ended,
+    // Operator cheat (phase 30): set only for an admin seat with RevealAi on. Null otherwise.
+    string? CheatAiName = null);
 
 // ---- reverse mode (phase 22) ----
 

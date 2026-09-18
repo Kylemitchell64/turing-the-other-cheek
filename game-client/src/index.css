@@ -2238,3 +2238,55 @@ button.ops-pause { padding: 0.55rem 1rem; }
   .notes { grid-template-columns: 1fr 1fr; }
   .invite .qr { width: 140px; height: 140px; }
 }
+
+
+/* ---- phase 30: operator tooling ---- */
+.admin-filters { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.6rem; }
+.admin-filters .segmented .seg { font-size: 0.66rem; padding: 0.4rem 0.5rem; }
+.admin-sort { display: flex; align-items: center; gap: 0.5rem; color: var(--muted); font-size: 0.72rem; letter-spacing: 1px; }
+.admin-sort select { background: #060a08; color: var(--text); border: 1px solid var(--neon-dim); border-radius: 6px; padding: 0.35rem 0.5rem; font: inherit; font-size: 0.78rem; }
+.error.inline { display: inline; padding: 0.3rem 0.5rem; }
+
+.sc-run { width: auto; }
+.sc-verdict { align-self: center; font-size: 0.74rem; letter-spacing: 1px; }
+.sc-verdict.sc-pass { color: var(--neon); }
+.sc-verdict.sc-warn { color: #ffb300; }
+.sc-verdict.sc-fail { color: #ff3b4e; }
+.sc-steps { list-style: none; margin: 0.7rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.sc-step { display: grid; grid-template-columns: 12px auto 1fr; grid-template-areas: "dot label status" "dot detail detail"; gap: 0.1rem 0.5rem; align-items: center; padding: 0.45rem 0.6rem; border: 1px solid var(--neon-dim); border-radius: 8px; background: #060a08; font-size: 0.76rem; }
+.sc-dot { grid-area: dot; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.sc-running .sc-dot { background: #ffb300; animation: sc-pulse 0.8s ease-in-out infinite alternate; }
+.sc-pass .sc-dot { background: var(--neon); box-shadow: 0 0 8px var(--neon); }
+.sc-warn .sc-dot { background: #ffb300; box-shadow: 0 0 8px #ffb300; }
+.sc-fail .sc-dot { background: #ff3b4e; box-shadow: 0 0 8px #ff3b4e; }
+@keyframes sc-pulse { from { opacity: 0.3; } to { opacity: 1; } }
+.sc-label { grid-area: label; color: var(--text); letter-spacing: 1px; }
+.sc-status { grid-area: status; color: var(--muted); justify-self: end; font-size: 0.68rem; }
+.sc-fail .sc-status { color: #ff3b4e; }
+.sc-warn .sc-status { color: #ffb300; }
+.sc-detail { grid-area: detail; color: var(--muted); font-size: 0.7rem; line-height: 1.45; word-break: break-word; }
+
+.cl-box { margin-top: 0.6rem; border: 1px solid var(--neon-dim); border-radius: 8px; padding: 0.7rem 0.8rem; background: #060a08; display: flex; flex-direction: column; gap: 0.6rem; }
+.cl-grid { display: grid; grid-template-columns: 1fr auto; gap: 0.3rem 1rem; font-size: 0.78rem; color: var(--muted); }
+.cl-grid b { color: var(--neon); }
+.cl-confirm { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.cl-confirm .sample-input { flex: 1 1 180px; min-height: auto; }
+.cl-confirm .danger-btn { width: auto; }
+
+.cheat-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.cheat-row { display: flex; gap: 0.8rem; align-items: center; text-align: left; width: 100%; padding: 0.6rem 0.7rem; background: #060a08; border: 1px solid var(--neon-dim); border-radius: 8px; color: var(--text); cursor: pointer; }
+.cheat-row.on { border-color: #ffb300; box-shadow: 0 0 10px rgba(255, 179, 0, 0.25); }
+.cheat-switch { flex: 0 0 44px; text-align: center; font-size: 0.66rem; letter-spacing: 1px; padding: 0.25rem 0; border: 1px solid var(--neon-dim); border-radius: 999px; color: var(--muted); }
+.cheat-row.on .cheat-switch { color: #050805; background: #ffb300; border-color: #ffb300; font-weight: bold; }
+.cheat-text { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.cheat-text b { color: var(--neon); letter-spacing: 1px; font-size: 0.8rem; }
+.cheat-text span { color: var(--muted); font-size: 0.7rem; line-height: 1.4; }
+
+.cheat-badge { margin: 0.3rem 0 0; font-size: 0.72rem; letter-spacing: 1px; color: #ffb300; border: 1px dashed #ffb300; border-radius: 6px; padding: 0.3rem 0.5rem; }
+.cheat-badge b { color: #ff3b4e; }
+
+@media (min-width: 900px) {
+  .admin-filters { flex-direction: row; align-items: center; justify-content: space-between; }
+  .sc-step { grid-template-columns: 12px 220px 1fr auto; grid-template-areas: "dot label detail status"; }
+  .sc-status { justify-self: end; }
+}

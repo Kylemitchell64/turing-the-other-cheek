@@ -211,6 +211,9 @@ builder.Services.AddAuthorization(o =>
         .RequireClaim("externalProvider", "Google"));
 });
 builder.Services.AddSingleton<GameApi.Admin.MaintenanceState>();
+// Operator cheats + the "does it all still work" self-check (phase 30).
+builder.Services.AddSingleton<GameApi.Admin.AdminCheatState>();
+builder.Services.AddSingleton<GameApi.Admin.SelfCheckService>();
 
 // Signed share-codes for AI-built custom packs (phase 20): key derived from JWT_KEY.
 // Plus the per-user generate limiter.

@@ -60,7 +60,7 @@ screen.
 
 ## Tests & CI
 
-Every push and PR runs the whole thing through GitHub Actions — the .NET suite (236 tests on EF InMemory, no DB needed), the client lint + build, a Docker image build, and a Playwright game played start to finish across desktop and mobile viewports. Green badge above means all of that passed on `main`.
+Every push and PR runs the whole thing through GitHub Actions — the .NET suite (240 tests on EF InMemory, no DB needed), the client lint + build, a Docker image build, and a Playwright game played start to finish across desktop and mobile viewports. Green badge above means all of that passed on `main`.
 
 ## Load test
 
@@ -197,6 +197,30 @@ into the AI's system prompt at the next lobby start. The more you play, the bett
 The whole thing is audited so the AI's identity never leaks in any payload before game end —
 rosters carry no user IDs, revealed answers are keyed by display name only and shuffled, and
 the veto rule exists specifically so a veto can't confirm a correct guess.
+
+## Operator console
+
+`/admin` (Google sign-in on the `ADMIN_EMAILS` allowlist) has, besides the analytics tiles
+and user directory:
+
+- **Self-check** — runs the real chain and reports each step live: database + which store
+  we booted on, pending migrations, config (JWT length, CORS, which AI legs have keys and
+  their breaker state), one real AI completion, a **synthetic solo game** on fast clocks
+  (bots seat, everyone answers, the AI answers, a scripted accusation gets faked-out, the
+  game ends, nothing persisted), the lobby store, and free-tier headroom (warn at 75%,
+  fail at 90% of any cap). One run at a time.
+- **Users** — filter (inactive 30d+, guests, oauth, *safe to delete*: guests that never
+  played, hold no samples and haven't been seen in 24h) and sort (last seen, storage,
+  games, name). Storage is the account's real stored bytes: samples + messages + profile +
+  character.
+- **Cleanup** — preview first, then `CLEANUP` to confirm: removes safe-to-delete accounts,
+  guests past the 30-day retention rule, consumed rewards older than 90 days, and dead
+  in-memory lobbies. Transcripts are kept (author links nulled).
+- **Cheats** — for admin seats only, off after every restart: *reveal the AI* (a private
+  badge on your screen; no shared payload changes) and *infinite fake-out tokens*.
+
+The engine also sweeps dead lobbies on its own: a finished game with nobody attached is
+dropped at once, an abandoned one after 10 minutes, so memory doesn't grow across the month.
 
 ## Engineering notes
 

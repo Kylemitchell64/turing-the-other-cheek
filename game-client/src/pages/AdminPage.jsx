@@ -50,6 +50,8 @@ export default function AdminPage() {
   const [timeline, setTimeline] = useState(null);
 
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [sort, setSort] = useState("lastSeen");
   const [page, setPage] = useState(1);
   const [usersData, setUsersData] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -86,9 +88,9 @@ export default function AdminPage() {
   }, [token, isAdmin]);
 
   const loadUsers = useCallback(async () => {
-    const { ok, data } = await api.adminUsers(token, { search, page, pageSize: PAGE_SIZE });
+    const { ok, data } = await api.adminUsers(token, { search, page, pageSize: PAGE_SIZE, filter, sort });
     if (ok) setUsersData(data);
-  }, [token, search, page]);
+  }, [token, search, page, filter, sort]);
 
   // Debounced search / paging.
   useEffect(() => {
@@ -204,11 +206,19 @@ export default function AdminPage() {
       <Users
         usersData={usersData}
         search={search}
+        filter={filter}
+        sort={sort}
         page={page}
         onSearch={(v) => { setSearch(v); setPage(1); }}
+        onFilter={(v) => { setFilter(v); setPage(1); }}
+        onSort={(v) => { setSort(v); setPage(1); }}
         onPage={setPage}
         onOpen={openProfile}
       />
+
+      <SelfCheck token={token} />
+      <Cleanup token={token} onDone={loadUsers} />
+      <Cheats token={token} />
 
       <Ops
         maintOn={maintOn}
@@ -394,7 +404,21 @@ function Timeline({ timeline }) {
   );
 }
 
-function Users({ usersData, search, page, onSearch, onPage, onOpen }) {
+const USER_FILTERS = [
+  { key: "all", label: "all" },
+  { key: "inactive", label: "inactive 30d+" },
+  { key: "guests", label: "guests" },
+  { key: "oauth", label: "oauth" },
+  { key: "safe-delete", label: "safe to delete" },
+];
+const USER_SORTS = [
+  { key: "lastSeen", label: "last seen" },
+  { key: "storage", label: "storage" },
+  { key: "games", label: "games" },
+  { key: "name", label: "name" },
+];
+
+function Users({ usersData, search, filter, sort, page, onSearch, onFilter, onSort, onPage, onOpen }) {
   const users = usersData?.users || [];
   const total = usersData?.total || 0;
   const maxUsage = usersData?.maxDataUsage || 0;
@@ -411,6 +435,24 @@ function Users({ usersData, search, page, onSearch, onPage, onOpen }) {
         value={search}
         onChange={(e) => onSearch(e.target.value)}
       />
+      <div className="admin-filters">
+        <div className="segmented">
+          {USER_FILTERS.map((f) => (
+            <button key={f.key} className={`seg ${filter === f.key ? "on" : ""}`} onClick={() => onFilter(f.key)} aria-pressed={filter === f.key}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <label className="admin-sort">
+          sort
+          <select value={sort} onChange={(e) => onSort(e.target.value)}>
+            {USER_SORTS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
+        </label>
+      </div>
+      {filter === "safe-delete" && (
+        <p className="admin-hint">// guests that never played, hold no samples and haven't been seen in 24h — probes and abandoned quick-plays. deleting them loses nothing; CLEANUP below does it in one go.</p>
+      )}
 
       <div className="admin-users">
         <div className="au-row au-head">
@@ -457,9 +499,9 @@ function UserRow({ u, maxUsage, onOpen }) {
       <span className="au-tier"><span className={`tier-badge tier-${u.tier}`}>{u.tier}</span></span>
       <span className="au-seen">{fmtDate(u.lastSeen)}</span>
       <span className="au-games">{u.gamesPlayed}</span>
-      <span className="au-data">
+      <span className="au-data" title={`${u.samples ?? 0} writing sample${u.samples === 1 ? "" : "s"}`}>
         <span className="au-data-bar"><span style={{ width: `${dataPct}%` }} /></span>
-        <span className="au-data-num">{fmtBytes(u.dataUsage)}</span>
+        <span className="au-data-num">{fmtBytes(u.dataUsage)}{u.safeDelete ? " · safe" : ""}</span>
       </span>
       <span className="au-rewards">
         {chips.length === 0
@@ -614,6 +656,155 @@ function PurgeModal({ onConfirm, onCancel }) {
         )}
       </div>
     </div>
+  );
+}
+
+// ---- phase 30: self-check ----
+// Runs the whole chain server-side (db, migrations, config, a real AI ping, a synthetic
+// solo game, lobby store, free-tier headroom) and streams each step's verdict here.
+function SelfCheck({ token }) {
+  const [run, setRun] = useState(null);
+  const [err, setErr] = useState(null);
+
+  const poll = useCallback(async () => {
+    const { ok, data } = await api.adminSelfCheck(token);
+    if (ok) setRun(data);
+    return ok && data;
+  }, [token]);
+
+  useEffect(() => { poll(); }, [poll]);
+
+  useEffect(() => {
+    if (!run?.running) return;
+    const id = setInterval(poll, 1000);
+    return () => clearInterval(id);
+  }, [run?.running, poll]);
+
+  const start = async () => {
+    setErr(null);
+    const { ok, data, status } = await api.adminSelfCheckStart(token);
+    if (ok) setRun(data);
+    else setErr(status === 409 ? "a check is already running" : "couldn't start the self-check");
+  };
+
+  const steps = run?.steps || [];
+  const worst = steps.some((s) => s.status === "fail") ? "fail" : steps.some((s) => s.status === "warn") ? "warn" : steps.length ? "pass" : null;
+
+  return (
+    <section className="admin-section">
+      <div className="crt-head">[ SELF-CHECK ]</div>
+      <p className="admin-hint">exercises the real thing: database, schema, config, one AI call, a synthetic solo game on fast clocks (bots, the AI, an accusation and a fake-out), the lobby store, and every free-tier cap.</p>
+      <div className="ops-actions">
+        <button className="primary sc-run" onClick={start} disabled={!!run?.running}>
+          {run?.running ? "running…" : "run self-check"}
+        </button>
+        {run?.finishedUtc && !run.running && (
+          <span className={`sc-verdict sc-${worst}`}>
+            {worst === "pass" ? "all clear" : worst === "warn" ? "warnings" : "problems"} · {fmtDate(run.finishedUtc)}
+          </span>
+        )}
+        {err && <span className="error inline">{err}</span>}
+      </div>
+      {steps.length > 0 && (
+        <ul className="sc-steps">
+          {steps.map((s) => (
+            <li key={s.key} className={`sc-step sc-${s.status}`}>
+              <span className="sc-dot" aria-hidden="true" />
+              <span className="sc-label">{s.label}</span>
+              <span className="sc-status">{s.status}{s.ms ? ` · ${s.ms < 1000 ? `${s.ms}ms` : `${(s.ms / 1000).toFixed(1)}s`}` : ""}</span>
+              {s.detail && <span className="sc-detail">{s.detail}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// ---- phase 30: cleanup ----
+function Cleanup({ token, onDone }) {
+  const [preview, setPreview] = useState(null);
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [phrase, setPhrase] = useState("");
+
+  const dryRun = async () => {
+    setBusy(true); setResult(null);
+    const { ok, data } = await api.adminCleanup(token, { dryRun: true });
+    setPreview(ok ? data : null);
+    setBusy(false);
+  };
+  const go = async () => {
+    setBusy(true);
+    const { ok, data } = await api.adminCleanup(token, { dryRun: false, confirm: phrase.trim() });
+    setResult(ok ? data : { error: data?.error || "cleanup failed" });
+    setPreview(null); setPhrase("");
+    setBusy(false);
+    if (ok) onDone?.();
+  };
+  const nothing = preview && !preview.safeDelete && !preview.staleGuests && !preview.oldRewards && !preview.deadLobbies;
+
+  return (
+    <section className="admin-section">
+      <div className="crt-head">[ CLEANUP ]</div>
+      <p className="admin-hint">freshen the app without touching anything a real player would miss: probe/abandoned guest accounts, guests past the 30-day retention rule, consumed rewards older than 90 days, and dead in-memory lobbies. always preview first.</p>
+      <div className="ops-actions">
+        <button className="ghost" onClick={dryRun} disabled={busy}>preview cleanup</button>
+      </div>
+      {preview && (
+        <div className="cl-box">
+          <div className="cl-grid">
+            <span>safe-to-delete accounts</span><b>{preview.safeDelete}</b>
+            <span>stale guests (30d+)</span><b>{preview.staleGuests}</b>
+            <span>old consumed rewards</span><b>{preview.oldRewards}</b>
+            <span>dead lobbies in memory</span><b>{preview.deadLobbies}</b>
+          </div>
+          {nothing ? (
+            <p className="soon">// nothing to clean. the app is fresh.</p>
+          ) : (
+            <div className="cl-confirm">
+              <input className="sample-input" placeholder='type CLEANUP to confirm' value={phrase} onChange={(e) => setPhrase(e.target.value)} />
+              <button className="danger-btn" onClick={go} disabled={busy || phrase.trim() !== "CLEANUP"}>run cleanup</button>
+            </div>
+          )}
+        </div>
+      )}
+      {result && (
+        <p className="admin-hint">
+          {result.error ? result.error : `done — removed ${result.removedUsers} account${result.removedUsers === 1 ? "" : "s"}, ${result.oldRewards} reward row${result.oldRewards === 1 ? "" : "s"}, ${result.deadLobbies} lobb${result.deadLobbies === 1 ? "y" : "ies"}.`}
+        </p>
+      )}
+    </section>
+  );
+}
+
+// ---- phase 30: operator cheats ----
+function Cheats({ token }) {
+  const [state, setState] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    api.adminCheats(token).then(({ ok, data }) => { if (alive && ok) setState(data); });
+    return () => { alive = false; };
+  }, [token]);
+  const toggle = async (key) => {
+    const { ok, data } = await api.adminSetCheats(token, { [key]: !state?.[key] });
+    if (ok) setState(data);
+  };
+  const Row = ({ k, label, blurb }) => (
+    <button type="button" className={`cheat-row ${state?.[k] ? "on" : ""}`} onClick={() => toggle(k)} aria-pressed={!!state?.[k]} disabled={!state}>
+      <span className="cheat-switch" aria-hidden="true">{state?.[k] ? "ON" : "off"}</span>
+      <span className="cheat-text"><b>{label}</b><span>{blurb}</span></span>
+    </button>
+  );
+  return (
+    <section className="admin-section">
+      <div className="crt-head">[ CHEATS ]</div>
+      <p className="admin-hint">only for seats signed in as admin — nobody else in the lobby is affected and no shared payload changes. resets to off when the server restarts.</p>
+      <div className="cheat-list">
+        <Row k="revealAi" label="reveal the AI" blurb="your screen shows which seat is the AI at game start (a private badge under the round header)." />
+        <Row k="infiniteTokens" label="infinite fake-out tokens" blurb="wrong accusations and vetoes don't cost you a token." />
+      </div>
+    </section>
   );
 }
 

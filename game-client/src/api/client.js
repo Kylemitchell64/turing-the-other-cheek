@@ -65,11 +65,18 @@ export const api = {
   adminOverview: (token) => request("/api/admin/overview", { token }),
   adminTimeline: (token) => request("/api/admin/timeline", { token }),
   adminFreeTier: (token) => request("/api/admin/freetier", { token }),
-  adminUsers: (token, { search = "", page = 1, pageSize = 20 } = {}) => {
-    const q = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  adminUsers: (token, { search = "", page = 1, pageSize = 20, filter = "all", sort = "lastSeen" } = {}) => {
+    const q = new URLSearchParams({ page: String(page), pageSize: String(pageSize), filter, sort });
     if (search) q.set("search", search);
     return request(`/api/admin/users?${q.toString()}`, { token });
   },
+  // phase 30 operator tooling
+  adminCleanup: (token, { dryRun = true, confirm = "" } = {}) =>
+    request("/api/admin/cleanup", { method: "POST", token, body: { dryRun, confirm } }),
+  adminSelfCheckStart: (token) => request("/api/admin/selfcheck", { method: "POST", token, body: {} }),
+  adminSelfCheck: (token) => request("/api/admin/selfcheck", { token }),
+  adminCheats: (token) => request("/api/admin/cheats", { token }),
+  adminSetCheats: (token, patch) => request("/api/admin/cheats", { method: "POST", token, body: patch }),
   adminUserProfile: (token, id) => request(`/api/admin/users/${id}`, { token }),
   adminDeleteUser: (token, id) => request(`/api/admin/users/${id}`, { method: "DELETE", token }),
   adminPurgeNonOauth: (token, confirm) =>
