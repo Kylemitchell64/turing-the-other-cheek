@@ -16,7 +16,7 @@ monthly bill to be $0. So every piece had to fit inside somebody's free tier.
 - **Database** is Postgres on Supabase's free tier. The API talks to it through Supabase's
   **session pooler** (port 5432, the pgbouncer endpoint), not a direct connection — the free
   tier only hands out a handful of direct connections and Render can spin up more than that.
-- **UptimeRobot** pings `/api/health` every 5 minutes to keep everything warm (see below).
+- ~~**UptimeRobot** pings `/api/health` every 5 minutes to keep everything warm.~~ Superseded: that kept the service awake 24/7 and used up the account's 750 free hours in half a month. Now a GitHub Actions cron pings four times a day, just enough to stop Supabase pausing; cold starts are accepted (ADR 0010).
 
 ## consequences
 

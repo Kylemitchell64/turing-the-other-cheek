@@ -1,13 +1,16 @@
 name: Keepalive
 
-# Free-tier babysitter. Render spins the API down after ~15 idle minutes and Supabase
-# pauses a free project after 7 idle days. /api/health runs SELECT 1 against Postgres, so
-# one ping every 10 minutes keeps both awake with no third-party monitor. UptimeRobot is
-# still worth having as a second pinger: GitHub disables cron workflows on repos with no
-# activity for 60 days, and scheduled runs can be delayed under load.
+# Supabase pauses a free project after 7 idle days, so something has to touch the DB now
+# and then. /api/health runs SELECT 1, and four pings a day reset that idle clock.
+#
+# Deliberately NOT frequent. Render's free tier is 750 instance-hours per month across the
+# whole account, and a service that is pinged every few minutes never spins down, burns
+# ~744 of those hours by itself, and takes every other free service down with it (this
+# happened). Each ping here wakes the API for ~15 minutes: 4/day * 0.25h = ~30 h/month.
+# Visitors pay a one-time cold start instead, and the client shows a "waking up" note.
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '17 */6 * * *'
   workflow_dispatch:
 
 permissions: {}
@@ -19,7 +22,7 @@ jobs:
     steps:
       - name: Ping /api/health
         run: |
-          body=$(curl -sS --max-time 90 --retry 2 https://turing-the-other-cheek.onrender.com/api/health)
+          body=$(curl -sS --max-time 120 --retry 2 https://turing-the-other-cheek.onrender.com/api/health)
           echo "$body"
           case "$body" in
             *'"db":true'*)  echo "postgres reachable" ;;

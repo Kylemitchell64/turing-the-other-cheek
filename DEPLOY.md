@@ -1,7 +1,6 @@
 # Deploy walkthrough
 
-Click-by-click for getting this live: Render (API) → Vercel (frontend) → UptimeRobot
-(keepalive). This lines up with MORNING.md steps 3–5. Budget ~15 minutes. Everything is
+Click-by-click for getting this live: Render (API) → Vercel (frontend) → keepalive. This covers Render, Vercel and the keepalive rule. Budget ~15 minutes. Everything is
 free tier, no card.
 
 Before you start you need the three secrets (Supabase connection string, Gemini key,
@@ -103,29 +102,15 @@ localhost, so the Vercel site can't talk to it yet. Fix that:
 
 ---
 
-## 4. Keepalive
+## 4. Keepalive — read this before adding a monitor
 
 The repo ships a GitHub Actions cron (`.github/workflows/keepalive.yml`) that pings
-`/api/health` every 10 minutes, so this step is optional insurance. It's still worth the two
-minutes: GitHub pauses cron workflows on repos idle for 60 days.
-
-### UptimeRobot
-
-Go to https://uptimerobot.com and log in.
-
-1. **+ New monitor**.
-2. Settings:
-   - **Monitor Type**: HTTP(s)
-   - **Friendly Name**: `turing health`
-   - **URL**: `https://<your-render-url>/api/health`
-   - **Monitoring interval**: 5 minutes
-3. **Create Monitor**.
-
-This hits `/api/health` every 5 minutes. That endpoint runs a `SELECT 1` against Postgres,
-so the single ping keeps the Render service awake **and** stops Supabase from pausing the
-free project after 7 idle days. Both problems, one monitor.
-
----
+`/api/health` four times a day. That keeps Supabase's 7-day idle pause away and costs
+Render ~30 free hours a month. **Don't add UptimeRobot or any every-few-minutes pinger.**
+Render's free tier is 750 instance-hours a month across the whole account; a service kept
+awake 24/7 uses ~744 by itself, and the account ran dry mid-month the last time that
+happened. Cold starts (30-60s for the first visitor after a nap) are the accepted trade;
+the client shows a `[ WAKING UP ]` banner while it happens.
 
 ### If the database ever pauses anyway
 

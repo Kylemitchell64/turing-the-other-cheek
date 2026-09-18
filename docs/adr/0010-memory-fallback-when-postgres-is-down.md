@@ -40,9 +40,12 @@ integration test factory disables it because it swaps the DbContext registration
 `StorageFallbackTests` boots a second factory with a dead connection string and asserts the
 production path really does fall back, report itself, and log guests in.
 
-A `keepalive.yml` GitHub Actions cron pings `/api/health` every 10 minutes alongside
-UptimeRobot, so the 7-day idle window should never be reached in the first place. It warns in
-the run log when it sees `db: false`.
+A `keepalive.yml` GitHub Actions cron pings `/api/health` four times a day — enough to reset
+Supabase's 7-day idle clock, and deliberately no more: Render's free tier is 750 instance-hours
+a month account-wide, and an always-awake service burns ~744 of them (the old 5-minute
+UptimeRobot monitor did exactly that and the account ran out mid-month). Visitors get a cold
+start instead, and the client shows a `[ WAKING UP ]` banner. The cron warns in its run log
+when it sees `db: false`.
 
 ## consequences
 

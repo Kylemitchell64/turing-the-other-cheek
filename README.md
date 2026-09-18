@@ -19,7 +19,7 @@ a game-theory-flavored veto rule that keeps players from leaking information.
 | Auth | ASP.NET Core Identity + JWT bearer |
 | AI player | Google Gemini (`gemini-2.5-flash`, free tier) behind an `IAiBrain` interface |
 | Containers | Docker (multi-stage, serves the client from wwwroot) |
-| Deploy | Render (API), Vercel (frontend), GitHub Actions cron + UptimeRobot (keepalive) |
+| Deploy | Render (API), Vercel (frontend), GitHub Actions cron (gentle keepalive) |
 
 Backend is in `GameApi`, the phone-first React client is in `game-client`.
 
@@ -144,17 +144,15 @@ lives on Vercel (faster static hosting, its own domain) and points at the Render
 - Deploy, then go back to Render and set `Cors__AllowedOrigins__0` to the Vercel URL and
   redeploy so CORS lets the Vercel origin through.
 
-### Keepalive
+### Keepalive (deliberately gentle)
 
-- `.github/workflows/keepalive.yml` pings `<Render URL>/api/health` every 10 minutes from
-  GitHub Actions — nothing to set up, it ships with the repo. It warns in the run log when
-  the API answers `db:false` (Supabase paused).
-- Optionally also add an UptimeRobot HTTP(s) monitor on the same URL at 5 minutes. GitHub
-  disables cron workflows on repos with no activity for 60 days, so a second pinger is cheap
-  insurance.
-- Why: Render's free tier spins the service down after ~15 min idle, and Supabase pauses
-  a free project after 7 days of no activity. `/api/health` runs a `SELECT 1` against the
-  DB, so this one ping keeps *both* awake — no cold starts, no paused database.
+- `.github/workflows/keepalive.yml` pings `<Render URL>/api/health` **four times a day**
+  from GitHub Actions. That's enough to reset Supabase's 7-day idle clock and nothing more.
+- Do **not** add a frequent pinger (UptimeRobot every 5 min, etc.). Render's free tier is
+  750 instance-hours per month for the whole account; a service that never sleeps burns
+  ~744 of them alone and takes every other free service with it. Been there.
+- The trade: the first visitor after an idle stretch waits ~30-60s for a cold start. The
+  client shows a `[ WAKING UP ]` note while that happens.
 
 ### If Supabase pauses anyway
 
