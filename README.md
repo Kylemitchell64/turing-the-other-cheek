@@ -48,7 +48,9 @@ you and the AI still hides among them. Five rounds, nothing saved, same rules �
 see the trick without rounding up friends. Hosts also get a **QR code + share link** in the
 lobby so phones can scan in instead of typing the code, and every game ends on a **recap**:
 the AI's line for each prompt, every accusation and how it went, the style notes the AI was
-carrying on each player, and a share button that hands your phone a result card.
+carrying on each player, and a share button that hands your phone a result card. In the
+solo demo a bot will even accuse someone and get faked-out by another bot, so you see the
+veto rule play out without anyone explaining it.
 
 There's also a **reverse mode**: no hidden impostor — everyone's human, and the *AI* is the one
 guessing who wrote which (shuffled, anonymous) answer each round. It's the same style-profile
@@ -201,7 +203,7 @@ the veto rule exists specifically so a veto can't confirm a correct guess.
 The interesting decisions are written up as short ADRs in [`docs/adr/`](docs/adr/) — the
 free-tier-only stack, the Gemini → Groq → Cerebras failover chain, why lobby state lives in
 memory, the JWT/sessionStorage auth choices, how the AI stays anonymous in every payload,
-difficulty as flag records, signed pack share codes, per-user rate limiting, reverse mode, and the in-memory fallback that keeps the game playable when the free-tier database is paused.
+difficulty as flag records, signed pack share codes, per-user rate limiting, reverse mode, the in-memory fallback that keeps the game playable when the free-tier database is paused, and the solo demo / rejoin design.
 
 The anonymity side has its own [threat model](docs/threat-model.md) — the ways a player could try
 to unmask the AI (frame sniffing, timing, statistical tells, host abuse, cross-rematch replay)
