@@ -286,14 +286,14 @@ export default function MenuWanderer() {
         mode.current = "down";
         setCrashStage("down");
         setFx("stars");
-        after(1500, () => {
-          // 4) up, dust off, clean slate
+        after(2700, () => {
+          // 4) up (slowly), dust off, clean slate
           mode.current = "dust";
           setCrashStage("dust");
           setFx("dust");
           nudges.current = [];
           setMood("calm");
-          after(1100, () => {
+          after(1700, () => {
             setFx(null);
             setCrashStage(null);
             phase.current = { ticks: randInt(30, 60) };
@@ -415,7 +415,7 @@ export default function MenuWanderer() {
   const interactive = !reduced;
 
   return (
-    <div className={`home-robot${crashStage ? " crashing" : ""}`} aria-hidden="true">
+    <div className={`home-robot${crashStage ? " crashing" : ""}${held || crashStage ? " active" : ""}`} aria-hidden="true">
       <div
         className={`home-robot-walker${interactive ? " grabbable" : ""}${held ? " grabbing" : ""}`}
         style={style}
