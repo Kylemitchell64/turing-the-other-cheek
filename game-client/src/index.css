@@ -2060,3 +2060,127 @@ button.ops-pause { padding: 0.55rem 1rem; }
 .reverse-guess { color: var(--muted); }
 .reverse-guess b { color: var(--text); }
 .reverse-taunt { margin-top: 0.25rem; color: var(--neon); font-style: italic; }
+
+/* ---- phase 28: the mascot has feelings (poke / drag / crash-out) ---- */
+.home-robot.crashing { overflow: visible; }
+.home-robot-walker.grabbable { pointer-events: auto; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.home-robot-walker.grabbing { cursor: grabbing; }
+.home-robot-walker.grabbable .wanderer-body { transition: filter 0.3s; }
+
+/* what it mutters, floating above its head */
+.wanderer-mutter {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  white-space: nowrap;
+  font-size: 0.68rem;
+  letter-spacing: 1px;
+  color: var(--neon);
+  background: #060a08;
+  border: 1px solid var(--neon-dim);
+  border-radius: 6px;
+  padding: 0.15rem 0.45rem;
+  pointer-events: none;
+  animation: mutter-pop 0.18s ease-out;
+}
+@keyframes mutter-pop { from { opacity: 0; translate: 0 6px; } to { opacity: 1; translate: 0 0; } }
+.mood-irritated ~ .wanderer-mutter, .mood-angry ~ .wanderer-mutter { color: #ffb300; border-color: #ffb300; }
+
+/* robot moods (the character sprite gets the same feelings via its own states) */
+.mood-annoyed .rb-led { fill: #ffb300; }
+.mood-irritated .rb-led { fill: #ff8c00; animation-duration: 1.2s; }
+.mood-irritated .rb-ball { fill: #ff8c00; animation-duration: 0.5s; }
+.mood-angry .rb-led { fill: #ff3b4e; animation: rb-fury 0.22s steps(2) infinite; }
+.mood-angry .rb-ball { fill: #ff3b4e; animation-duration: 0.25s; }
+.mood-angry .robot { animation: sp-shake 0.35s linear infinite; }
+.mood-angry .rb-chest { fill: #ff3b4e; }
+@keyframes rb-fury { from { opacity: 1; } to { opacity: 0.35; } }
+
+/* picked up: dangles under the pointer */
+.held > svg { animation: wanderer-dangle 0.9s ease-in-out infinite alternate; transform-origin: 50% 0%; }
+@keyframes wanderer-dangle { from { rotate: -7deg; } to { rotate: 7deg; } }
+
+/* crash-out beat 1: glitch into glyphs */
+.crash-glitch > svg { animation: wanderer-glitch 0.12s steps(1) infinite; }
+@keyframes wanderer-glitch {
+  0%   { clip-path: inset(0 0 55% 0); translate: -4px 0; filter: hue-rotate(120deg) saturate(3); }
+  25%  { clip-path: inset(35% 0 20% 0); translate: 5px 0; filter: invert(1); }
+  50%  { clip-path: inset(10% 0 70% 0); translate: -6px 1px; filter: hue-rotate(-90deg) contrast(2); }
+  75%  { clip-path: inset(60% 0 0 0); translate: 3px -1px; filter: none; }
+  100% { clip-path: inset(0 0 0 0); translate: 0 0; filter: hue-rotate(200deg); }
+}
+/* beat 2: sprinting off the edge — legs going, leaning into it */
+.crash-flee > svg { animation: wanderer-sprint 0.16s linear infinite alternate; }
+.crash-flee .robot { animation: wanderer-sprint 0.16s linear infinite alternate; }
+@keyframes wanderer-sprint { from { rotate: 9deg; translate: 0 0; } to { rotate: 11deg; translate: 0 -3px; } }
+/* beat 3: flat on its face, seeing stars */
+.crash-down > svg { rotate: 90deg; transform-origin: 50% 100%; translate: 0 8px; transition: rotate 0.12s ease-in; }
+/* beat 4: back up, dusting off */
+.crash-dust > svg { animation: wanderer-dust 0.28s ease-in-out infinite alternate; transform-origin: 50% 100%; }
+@keyframes wanderer-dust { from { rotate: -4deg; translate: -1px 0; } to { rotate: 4deg; translate: 1px 0; } }
+
+/* particle overlays */
+.wfx { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+.wfx-p { position: absolute; font-family: monospace; font-weight: bold; animation-fill-mode: both; }
+.wfx-glitch .wfx-p { color: var(--neon); font-size: 0.8rem; text-shadow: 0 0 6px var(--neon); animation: wfx-glyph 0.5s steps(3) infinite; }
+@keyframes wfx-glyph {
+  0% { opacity: 1; translate: 0 0; color: var(--neon); }
+  33% { opacity: 0.2; translate: 6px -4px; color: #ff3b4e; }
+  66% { opacity: 1; translate: -5px 3px; color: #2e86de; }
+  100% { opacity: 0; translate: 0 8px; }
+}
+.wfx-stars .wfx-p { color: #f2c94c; font-size: 0.85rem; text-shadow: 0 0 6px #f2c94c; animation: wfx-orbit 1.1s ease-in-out infinite alternate; }
+@keyframes wfx-orbit { from { translate: -10px 0; opacity: 0.4; rotate: 0deg; } to { translate: 10px -6px; opacity: 1; rotate: 180deg; } }
+.wfx-dust .wfx-p { color: var(--muted); font-size: 0.9rem; animation: wfx-puff 0.7s ease-out forwards; }
+@keyframes wfx-puff { from { opacity: 1; translate: 0 0; scale: 0.6; } to { opacity: 0; translate: 0 -18px; scale: 1.6; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .held > svg, .crash-glitch > svg, .crash-flee > svg, .crash-flee .robot, .crash-dust > svg,
+  .wfx-p, .mood-angry .robot, .mood-angry .rb-led { animation: none !important; }
+}
+
+/* home right column wrapper only exists for the desktop grid; on phones it's transparent */
+.home-right { display: contents; }
+
+/* ---- desktop: fill the CRT instead of leaving half of it dark (mobile untouched) ---- */
+@media (min-width: 900px) {
+  .screen { max-width: 1240px; padding: 2.5rem 3rem 2.75rem; }
+  .screen.admin { max-width: 1240px; }
+
+  /* home: the screen is at least the viewport, the grid sits in the middle of it, and the
+     [WHAT IS THIS?] panel lives under crews in the right column so both sides carry weight */
+  .home-grid {
+    grid-template-columns: 1.05fr 0.95fr;
+    gap: 1.5rem 2rem;
+    flex: 1 1 auto;
+    align-content: center;
+    min-height: calc(100vh - 12rem);
+  }
+  .home-right { display: flex; flex-direction: column; gap: 1.5rem; min-width: 0; }
+  .home-right .panel.about { margin-top: 0; }
+  .home-grid .panel { padding: 2rem 2rem 2.1rem; }
+  .home-grid h1.glow { font-size: 2.1rem; line-height: 1.15; }
+  .home-grid .tagline { font-size: 0.95rem; margin-bottom: 1.6rem; }
+  .home-grid .menu { gap: 0.8rem; }
+  .home-grid .menu button, .home-grid .form button { padding: 1rem 1.25rem; font-size: 0.95rem; letter-spacing: 2px; }
+  .home-grid .about-toggle { font-size: 1rem; padding: 0.9rem 1rem; }
+  .home-grid .about-body p { font-size: 0.9rem; line-height: 1.7; }
+
+  /* lobby + stats + samples get the same wider breathing room */
+  .lobby-grid { gap: 2rem 2.5rem; }
+  .lobby-grid .panel { padding: 1.9rem 2rem; }
+  .code-char { font-size: 2.9rem; }
+  .stat-grid { gap: 1rem; }
+
+  /* centered single-card screens (login, choose a name, creator, callbacks): a card in the
+     middle of the CRT rather than a form stretched across all of it */
+  .screen.center { max-width: 1240px; align-items: center; }
+  .screen.center > * { width: 100%; max-width: 560px; }
+  .screen.center > .panel.creator { max-width: 760px; }
+  .screen.center > .maint-banner { max-width: 760px; }
+
+  /* the mascot has more floor to roam on a wide screen, and sits above the (mostly empty)
+     bottom of the grid so it can actually be poked — `.screen > *` lifts content to z 1 */
+  .home-robot { height: 170px; }
+  .screen > .home-robot { z-index: 2; }
+}

@@ -100,6 +100,7 @@ export default function HomePage() {
         )}
       </div>
 
+      <div className="home-right">
       <CrewsPanel />
 
       <div className="panel about">
@@ -133,6 +134,7 @@ export default function HomePage() {
             <p className="about-foot">// pick a name, grab some friends, find the machine.</p>
           </div>
         )}
+      </div>
       </div>
       </div>
 
