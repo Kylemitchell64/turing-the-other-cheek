@@ -28,6 +28,9 @@ public class TestAppFactory : WebApplicationFactory<Program>
                 // Tests always use the mock brain — never hit the real Gemini API, even
                 // if a GEMINI_API_KEY happens to be set in this environment.
                 ["Ai:Brain"] = "Mock",
+                // Skip the boot-time Postgres probe + memory fallback; this factory swaps
+                // the Npgsql registration for InMemory itself (below).
+                ["Db:FallbackToMemory"] = "false",
                 // TestServer sees every request as one IP; raise the limit high so the
                 // suite's many registrations (all in one fixed window) don't trip the 429.
                 ["RateLimit:PermitsPerMinute"] = "100000",

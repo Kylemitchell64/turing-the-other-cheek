@@ -103,7 +103,13 @@ localhost, so the Vercel site can't talk to it yet. Fix that:
 
 ---
 
-## 4. UptimeRobot — keepalive
+## 4. Keepalive
+
+The repo ships a GitHub Actions cron (`.github/workflows/keepalive.yml`) that pings
+`/api/health` every 10 minutes, so this step is optional insurance. It's still worth the two
+minutes: GitHub pauses cron workflows on repos idle for 60 days.
+
+### UptimeRobot
 
 Go to https://uptimerobot.com and log in.
 
@@ -120,6 +126,13 @@ so the single ping keeps the Render service awake **and** stops Supabase from pa
 free project after 7 idle days. Both problems, one monitor.
 
 ---
+
+### If the database ever pauses anyway
+
+The API falls back to an in-memory store and stays playable (players see a `[ TEMP MODE ]`
+banner; `/api/health` shows `"db":false,"storage":"memory"`). Sign in at
+https://supabase.com/dashboard, open the project, click **Restore project**, wait a few
+minutes — the API restarts itself onto Postgres once it can reach it.
 
 ## 5. Play
 

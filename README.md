@@ -19,7 +19,7 @@ a game-theory-flavored veto rule that keeps players from leaking information.
 | Auth | ASP.NET Core Identity + JWT bearer |
 | AI player | Google Gemini (`gemini-2.5-flash`, free tier) behind an `IAiBrain` interface |
 | Containers | Docker (multi-stage, serves the client from wwwroot) |
-| Deploy | Render (API), Vercel (frontend), UptimeRobot (keepalive) |
+| Deploy | Render (API), Vercel (frontend), GitHub Actions cron + UptimeRobot (keepalive) |
 
 Backend is in `GameApi`, the phone-first React client is in `game-client`.
 
@@ -51,7 +51,7 @@ screen.
 
 ## Tests & CI
 
-Every push and PR runs the whole thing through GitHub Actions — the .NET suite (195 tests on EF InMemory, no DB needed), the client lint + build, a Docker image build, and a Playwright game played start to finish across desktop and mobile viewports. Green badge above means all of that passed on `main`.
+Every push and PR runs the whole thing through GitHub Actions — the .NET suite (233 tests on EF InMemory, no DB needed), the client lint + build, a Docker image build, and a Playwright game played start to finish across desktop and mobile viewports. Green badge above means all of that passed on `main`.
 
 ## Load test
 
@@ -144,12 +144,25 @@ lives on Vercel (faster static hosting, its own domain) and points at the Render
 - Deploy, then go back to Render and set `Cors__AllowedOrigins__0` to the Vercel URL and
   redeploy so CORS lets the Vercel origin through.
 
-### UptimeRobot (keepalive)
+### Keepalive
 
-- New HTTP(s) monitor on `<your Render URL>/api/health`, interval 5 minutes.
+- `.github/workflows/keepalive.yml` pings `<Render URL>/api/health` every 10 minutes from
+  GitHub Actions — nothing to set up, it ships with the repo. It warns in the run log when
+  the API answers `db:false` (Supabase paused).
+- Optionally also add an UptimeRobot HTTP(s) monitor on the same URL at 5 minutes. GitHub
+  disables cron workflows on repos with no activity for 60 days, so a second pinger is cheap
+  insurance.
 - Why: Render's free tier spins the service down after ~15 min idle, and Supabase pauses
   a free project after 7 days of no activity. `/api/health` runs a `SELECT 1` against the
   DB, so this one ping keeps *both* awake — no cold starts, no paused database.
+
+### If Supabase pauses anyway
+
+The API doesn't go down. If Postgres doesn't answer at boot, it comes up on an in-memory
+store instead: fully playable, nothing saved, a `[ TEMP MODE ]` banner on the login and
+home screens, and `storage: "memory"` on `/api/status` and `/api/health`. Restore the
+project in the Supabase dashboard and the API restarts itself onto Postgres within a few
+minutes, between games. Details in [ADR 0010](docs/adr/0010-memory-fallback-when-postgres-is-down.md).
 
 Full click-by-click walkthrough is in `DEPLOY.md`.
 
@@ -181,7 +194,7 @@ the veto rule exists specifically so a veto can't confirm a correct guess.
 The interesting decisions are written up as short ADRs in [`docs/adr/`](docs/adr/) — the
 free-tier-only stack, the Gemini → Groq → Cerebras failover chain, why lobby state lives in
 memory, the JWT/sessionStorage auth choices, how the AI stays anonymous in every payload,
-difficulty as flag records, signed pack share codes, per-user rate limiting, and reverse mode.
+difficulty as flag records, signed pack share codes, per-user rate limiting, reverse mode, and the in-memory fallback that keeps the game playable when the free-tier database is paused.
 
 The anonymity side has its own [threat model](docs/threat-model.md) — the ways a player could try
 to unmask the AI (frame sniffing, timing, statistical tells, host abuse, cross-rematch replay)

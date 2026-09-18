@@ -38,16 +38,43 @@ builder.Services.Configure<Microsoft.AspNetCore.Server.Kestrel.Core.KestrelServe
 var useInMemoryDb = builder.Environment.IsDevelopment()
     && builder.Configuration.GetValue<bool>("UseInMemoryDb");
 
+// Free-tier resilience: Supabase pauses an idle project after 7 days, and a paused DB
+// used to mean every login 500'd until someone clicked "restore". Now, if Postgres doesn't
+// answer a short probe at boot, the API comes up on EF InMemory instead — fully playable,
+// nothing persisted — and PostgresRecoveryWatcher restarts the process onto Postgres once
+// it's back (between games, never mid-round). Opt out with Db:FallbackToMemory=false
+// (the test factory does, so it keeps swapping the Npgsql registration itself).
+var storageMode = StorageMode.Postgres;
 if (useInMemoryDb)
 {
+    storageMode = StorageMode.Memory;
     builder.Services.AddDbContext<GameContext>(options =>
         options.UseInMemoryDatabase("turing-dev"));
 }
 else
 {
-    builder.Services.AddDbContext<GameContext>(options =>
-        options.UseNpgsql(connectionString));
+    var fallbackAllowed = builder.Configuration.GetValue<bool?>("Db:FallbackToMemory") ?? true;
+    var probeSeconds = builder.Configuration.GetValue<int?>("Db:ProbeSeconds") ?? 8;
+    if (fallbackAllowed && !StorageMode.ProbePostgres(connectionString, TimeSpan.FromSeconds(probeSeconds)))
+    {
+        storageMode = StorageMode.Memory;
+        builder.Services.AddDbContext<GameContext>(options =>
+            options.UseInMemoryDatabase("turing-fallback"));
+        builder.Services.AddSingleton<PostgresRecoveryWatcher>(sp => new PostgresRecoveryWatcher(
+            connectionString,
+            sp.GetRequiredService<LobbyStore>(),
+            sp.GetRequiredService<IHostApplicationLifetime>(),
+            sp.GetRequiredService<IConfiguration>(),
+            sp.GetRequiredService<ILogger<PostgresRecoveryWatcher>>()));
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<PostgresRecoveryWatcher>());
+    }
+    else
+    {
+        builder.Services.AddDbContext<GameContext>(options =>
+            options.UseNpgsql(connectionString));
+    }
 }
+builder.Services.AddSingleton(new StorageMode(storageMode));
 
 // ASP.NET Core Identity — username/password
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(o =>
@@ -289,6 +316,10 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
+
+if (app.Services.GetRequiredService<StorageMode>().IsMemory && !useInMemoryDb)
+    app.Logger.LogCritical(
+        "Postgres was unreachable at startup — running on the IN-MEMORY store. The game is playable but nothing persists. If this is Supabase, restore the project at https://supabase.com/dashboard; the API will restart onto Postgres by itself once it answers.");
 
 // Trust reverse proxy headers (Render) so scheme/host are correct
 app.UseForwardedHeaders(new ForwardedHeadersOptions
