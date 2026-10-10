@@ -3,6 +3,7 @@ import { buildGameConnection } from "./gameConnection";
 import { measureClockSkew } from "../api/client";
 import { DEFAULT_PACK } from "./packs";
 import { useAuth } from "../auth/AuthContext";
+import { mascotBus } from "../components/mascotBus";
 
 const LobbyContext = createContext(null);
 
@@ -126,6 +127,12 @@ export function LobbyProvider({ children }) {
       });
 
       conn.on("CheatReveal", (name) => setCheatAiName(name));
+
+      // Phase 33: the lobby's shared mascot floor. Display names only; the server sends
+      // these in the pre-game lobby and nowhere else, and only MenuWanderer/LobbyFloor
+      // (never rendered on GamePage) listen.
+      conn.on("MascotCrashed", (name) => mascotBus.emit({ type: "remote-crash", name }));
+      conn.on("MascotPoked", (poker, target) => mascotBus.emit({ type: "poked", poker, target }));
 
       conn.on("GameStarted", (r) => {
         setCheatAiName(null);
@@ -467,6 +474,21 @@ export function LobbyProvider({ children }) {
     await conn.invoke("SetLobbyMusic", mood);
   }, [ensureConnected]);
 
+  // Phase 33: mascot moments on the shared lobby floor. Best-effort and fire-and-forget
+  // (cosmetic; the server rate-limits and lobby-scopes them and drops the rest silently).
+  const mascotCrashed = useCallback(async () => {
+    try {
+      const conn = connRef.current;
+      if (conn && conn.state === "Connected") await conn.invoke("MascotCrashed");
+    } catch { /* cosmetic — ignore */ }
+  }, []);
+  const pokeMascot = useCallback(async (targetName) => {
+    try {
+      const conn = connRef.current;
+      if (conn && conn.state === "Connected") await conn.invoke("PokeMascot", targetName);
+    } catch { /* cosmetic — ignore */ }
+  }, []);
+
   const submitAnswer = useCallback(async (text) => {
     const conn = await ensureConnected();
     await conn.invoke("SubmitAnswer", text);
@@ -539,7 +561,7 @@ export function LobbyProvider({ children }) {
     tokens, clockSkew, history, packKey, difficulty, paceKey, mode, customPackName, typing,
     musicMood, setLobbyMusic,
     createLobby, joinLobby, createCrewLobby, setCrewCode, startGame, startSoloGame, playSolo, setLobbyOptions, setCustomPack, leaveLobby,
-    submitAnswer, makeAccusation, useFakeOut, setTypingState,
+    submitAnswer, makeAccusation, useFakeOut, setTypingState, mascotCrashed, pokeMascot,
   };
 
   return <LobbyContext.Provider value={value}>{children}</LobbyContext.Provider>;
