@@ -5,6 +5,7 @@ import { useLobby } from "../game/LobbyContext";
 import { PACKS, packFor } from "../game/packs";
 import PackMakerModal from "../components/PackMakerModal";
 import MenuWanderer from "../components/MenuWanderer";
+import LobbyFloor from "../components/LobbyFloor";
 import ReconnectBanner from "../components/ReconnectBanner";
 
 // Impostor difficulty + answer pace options. Keys must match the server's
@@ -346,6 +347,8 @@ export default function LobbyPage() {
         />
       )}
 
+      {/* phase 33: everyone else's characters share the floor — lobby page only */}
+      <LobbyFloor />
       <MenuWanderer />
     </div>
   );

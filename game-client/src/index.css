@@ -2219,6 +2219,51 @@ button.ops-pause { padding: 0.55rem 1rem; width: auto; }
 .wanderer-mutter.scold { color: #ffb300; border-color: #ffb300; }
 .crash-sulk > svg { animation: wanderer-shuffle 1.2s ease-in-out infinite alternate; filter: brightness(0.8); }
 
+/* ---- phase 33: the shared lobby floor (everyone else's characters) ---- */
+.lobby-floor {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 120px;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+  opacity: 0.85;
+}
+.floormate {
+  position: absolute;
+  bottom: 0.4rem;
+  transition: left 0.06s linear;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
+  user-select: none;
+  -webkit-user-select: none;
+}
+.floormate-body { display: inline-block; transform-origin: 50% 100%; }
+.floormate.walking .floormate-body > svg { animation: wanderer-shuffle 0.45s ease-in-out infinite alternate; }
+.floormate.stomping .floormate-body > svg { animation: sp-shake 0.35s linear infinite; }
+.floormate.glitching .floormate-body > svg { animation: wanderer-glitch 0.12s steps(1) infinite; }
+.floormate-name {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  translate: -50% -2px;
+  font-size: 0.5rem;
+  letter-spacing: 1px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.floormate-mutter { transform: translateX(-50%); color: #ff3b4e; border-color: #ff3b4e; }
+.act-flinch > svg:first-child { animation: sp-shake 0.3s linear 2; }
+.act-stomp > svg:first-child { animation: wanderer-sprint 0.2s linear infinite alternate; }
+@media (min-width: 900px) {
+  .lobby-floor { height: 170px; }
+  .screen > .lobby-floor { z-index: 2; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .floormate .floormate-body > svg, .act-flinch > svg, .act-stomp > svg { animation: none !important; }
+}
+
 /* battle scars ride on top of the sprite, same box, same transforms */
 .wanderer-scars { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 

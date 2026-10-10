@@ -223,6 +223,8 @@ builder.Services.AddSingleton<GameApi.Controllers.PackGenRateLimiter>();
 // Realtime: SignalR + the process-wide in-memory lobby store.
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<LobbyStore>();
+// phase 33: per-user cap on the mascot's lobby broadcasts (hub traffic skips the HTTP limiter)
+builder.Services.AddSingleton<GameApi.Lobbies.MascotRateLimiter>();
 
 // Game loop: round timings (config-overridable so tests run fast), the AI brain
 // (MockBrain this phase; GeminiBrain lands in phase 4), and the engine — one

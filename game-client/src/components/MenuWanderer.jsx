@@ -4,6 +4,7 @@ import CharacterSprite from "../sprites/CharacterSprite";
 import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
 import { sfxBus } from "../audio/sfx";
+import { mascotBus } from "./mascotBus";
 
 // The menu mascot (phase 25, grown out of the phase-21 HomeRobot). It wanders along the
 // bottom of every menu screen, behind the panels: walks left-right, flips at the edges,
@@ -43,6 +44,12 @@ import { sfxBus } from "../audio/sfx";
 //     black eye, stitches, sling — capped). Module-level, so it survives page changes and
 //     a reload clears it. Mascot-only: drawn as an overlay here, never inside
 //     CharacterSprite, so podiums and every in-game sprite are untouched (ADR 0005).
+//
+// Phase 33: on the lobby page it shares the floor with everyone else's characters
+// (LobbyFloor). Its own crash-outs are announced to the room (mascotBus "self-crash"), and
+// when someone ELSE's mascot crashes out it flinches and looks over ("did you see that?").
+// If another player pokes your character on their phone, it turns and stomps over to
+// theirs, muttering their name. It only listens while the lobby floor is mounted.
 // Every one of these is off under prefers-reduced-motion, and all of the new gestures go
 // through the same phase-31 document-level hit test: the sprite still takes no pointer
 // events and nothing here calls preventDefault on a tap meant for real UI.
@@ -501,6 +508,7 @@ export default function MenuWanderer() {
     setFx("glitch");
     setMutter("");
     sfxBus.emit("crash");
+    mascotBus.emit({ type: "self-crash" }); // phase 33: the lobby floor tells the room
     const ending = pickEnding();
     setLastEnding(ending);
     after(950, () => {
@@ -593,6 +601,51 @@ export default function MenuWanderer() {
       });
     });
   }, [after, burst, calmBy, say, walkTo, widthPct]);
+
+  // ---- phase 33: the shared lobby floor ----
+  // where I stand, so the other characters can turn toward me / stomp at me
+  useEffect(() => {
+    if (!user) return;
+    mascotBus.positions.set(username, pose.pos);
+  }, [user, username, pose.pos]);
+  useEffect(() => () => { mascotBus.positions.delete(username); }, [username]);
+
+  useEffect(() => {
+    if (reduced) return;
+    return mascotBus.on((ev) => {
+      if (!mascotBus.floorActive || mode.current !== "idle") return;
+      const me = posRef.current;
+      if (ev.type === "remote-crash") {
+        // flinch: a little hop, look over at whoever it was, say something
+        const at = mascotBus.positions.get(ev.name);
+        const p = phys.current;
+        p.offY = Math.min(p.offY, -14);
+        kick();
+        setAct("flinch");
+        after(1800, () => setAct((a) => (a === "flinch" ? null : a)));
+        phase.current = { ticks: randInt(30, 50) };
+        setPose((q) => ({ ...q, walking: false, look: at == null ? 0 : at > me ? 1 : -1, dir: at == null ? q.dir : at > me ? 1 : -1 }));
+        say("did you see that?", 1800);
+      } else if (ev.type === "poked" && user && ev.target === username) {
+        // someone poked ME on their phone: stomp over to their character and say so
+        const at = mascotBus.positions.get(ev.poker);
+        mode.current = "stomp";
+        setAct("stomp");
+        say(`${ev.poker}!!`, 1600);
+        const done = () => {
+          say(`${ev.poker}.`, 1200);
+          after(1100, () => {
+            setAct((a) => (a === "stomp" ? null : a));
+            phase.current = { ticks: randInt(30, 60) };
+            if (mode.current === "stomp") mode.current = "idle";
+            setPose((q) => ({ ...q, walking: false, look: 0 }));
+          });
+        };
+        if (at == null) after(900, done);
+        else walkTo(clamp(at + (at > me ? -6 : 6), -2, 90), 0.9, done);
+      }
+    });
+  }, [reduced, user, username, after, kick, say, walkTo]);
 
   // ---- pointer: click = poke, drag = pick up & drop (or throw), slow rub = pet ----
   const drag = useRef(null);
@@ -760,6 +813,8 @@ export default function MenuWanderer() {
   else if (crashStage === "pack" || crashStage === "leave" || crashStage === "sheepish") spriteState = "sad";
   else if (held) spriteState = "confused";
   else if (act === "eat" || act === "clingy") spriteState = "excited";
+  else if (act === "stomp") spriteState = "mad";
+  else if (act === "flinch") spriteState = "confused";
   else if (mood === "angry") spriteState = "mad";
   else if (mood === "irritated") spriteState = "sad";
   else if (mood === "annoyed") spriteState = "confused";
@@ -802,7 +857,12 @@ export default function MenuWanderer() {
       if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) {
         // not on the sprite: maybe a tap on the empty floor (phase 32 snack)
         const band = layerRef.current?.getBoundingClientRect();
-        if (band && e.clientY >= band.top && mode.current === "idle" && !(under && under.closest(".panel"))) {
+        // phase 33: a tap on someone else's character on the lobby floor is a poke, not a snack
+        const onMate = [...document.querySelectorAll(".floormate")].some((el) => {
+          const m = el.getBoundingClientRect();
+          return e.clientX >= m.left && e.clientX <= m.right && e.clientY >= m.top && e.clientY <= m.bottom;
+        });
+        if (band && !onMate && e.clientY >= band.top && mode.current === "idle" && !(under && under.closest(".panel"))) {
           snackTap.current = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() };
         }
         return;

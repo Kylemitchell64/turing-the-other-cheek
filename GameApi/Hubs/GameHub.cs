@@ -29,11 +29,14 @@ public class GameHub : Hub
     private readonly ILogger<GameHub> _logger;
 
     private readonly AdminCheatState _cheats;
+    private readonly MascotRateLimiter _mascotLimiter;
 
     public GameHub(LobbyStore store, GameEngine engine, GameContext db, MaintenanceState maintenance,
-        IServiceScopeFactory scopeFactory, PackCodec packCodec, AdminCheatState cheats, ILogger<GameHub> logger)
+        IServiceScopeFactory scopeFactory, PackCodec packCodec, AdminCheatState cheats,
+        MascotRateLimiter mascotLimiter, ILogger<GameHub> logger)
     {
         _cheats = cheats;
+        _mascotLimiter = mascotLimiter;
         _store = store;
         _engine = engine;
         _db = db;
@@ -612,6 +615,50 @@ public class GameHub : Hub
 
         _logger.LogInformation("Lobby {Code} music set to {Mood}", lobby.Code, mood);
         await Clients.Group(lobby.Code).SendAsync("LobbyMusicChanged", mood);
+    }
+
+    // Phase 33: the menu mascot's lobby moments. Both are COSMETIC and LOBBY-ONLY: the
+    // pre-game lobby is humans only (the AI doesn't have a seat until StartGame), so a
+    // character reacting to another player here can't say anything about who the AI is.
+    // Once the game starts both go quiet, and the client only renders the shared floor on
+    // the lobby page. Payloads are display names only — never a user id (ADR 0005).
+    // Over the per-user budget (MascotRateLimiter) or out of scope = silently ignored,
+    // same as SetTyping: nothing for the player to fix.
+
+    // My mascot just crashed out. Every OTHER phone in the lobby flinches.
+    public async Task MascotCrashed()
+    {
+        var name = LobbyOnlyCaller(out var lobby);
+        if (name == null || lobby == null) return;
+        if (!_mascotLimiter.TryTake(UserId, MascotRateLimiter.Kind.Crash)) return;
+        await Clients.OthersInGroup(lobby.Code).SendAsync("MascotCrashed", name);
+    }
+
+    // I poked someone else's character on the shared floor. Everyone (me included) sees it
+    // turn and stomp toward my character, muttering my name.
+    public async Task PokeMascot(string targetName)
+    {
+        var name = LobbyOnlyCaller(out var lobby);
+        if (name == null || lobby == null) return;
+        targetName = (targetName ?? "").Trim();
+        if (targetName.Length == 0 || string.Equals(targetName, name, StringComparison.Ordinal)) return;
+        string? target;
+        lock (lobby.Sync) target = lobby.FindPlayerByName(targetName)?.DisplayName;
+        if (target == null) return;
+        if (!_mascotLimiter.TryTake(UserId, MascotRateLimiter.Kind.Poke)) return;
+        await Clients.Group(lobby.Code).SendAsync("MascotPoked", name, target);
+    }
+
+    // The caller's display name if they're seated in a lobby that hasn't started; else null.
+    private string? LobbyOnlyCaller(out Lobby? lobby)
+    {
+        lobby = FindLobbyForCaller();
+        if (lobby == null) return null;
+        lock (lobby.Sync)
+        {
+            if (lobby.State != GameState.Lobby) return null;
+            return lobby.FindPlayer(UserId)?.DisplayName;
+        }
     }
 
     // Write a crew lobby's freshly-picked options back to its Crew row. Fire-and-forget on
