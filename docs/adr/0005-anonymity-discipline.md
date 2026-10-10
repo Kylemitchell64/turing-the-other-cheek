@@ -31,6 +31,12 @@ Treat the AI as just another seat in every payload until the game is decided.
   occasional last-second "deadline scrape" — with an anti-pattern guard so it doesn't answer at
   a suspiciously consistent moment every round. To the server's broadcast, the AI's answer
   arrives like anyone else's.
+- **Anonymous answer cards.** In a room of friends every real name is known, so the one
+  roster name nobody owns *is* the AI — that can't be hidden, and the podium row keeps names
+  and sprites. The game is spotting which *answer* is its: the reveal/accuse cards show only
+  the text (the viewer's own card says "(you)") — no name, no sprite, no token pips (pips
+  differ by seat and would pin a card to someone). Status lines name the accuser, never the
+  accused, and the accused's podium doesn't react.
 - **Host-driven fields stay host-driven.** Options the host sets (pack, pace, difficulty, music)
   live on the lobby and broadcast identically to all seats. There's no per-player field that
   exists for the AI and not for humans.
@@ -43,3 +49,8 @@ roster/reveal tests assert no user id or AI marker leaks pre-endgame. The threat
 (`docs/threat-model.md`) walks the specific attacks (frame sniffing, timing analysis, tells)
 and points at the class that defends each one. The full reveal — who the AI was — only ships
 once the game is over and there's nothing left to protect.
+
+Known gap: the revealed-answer payload is still keyed by display name (the client sends that
+name back to accuse), so with the AI's name known, a player reading WebSocket frames can see
+which answer is its. Closing it means opaque per-round answer ids that the server maps back
+to a seat on `MakeAccusation`.

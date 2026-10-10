@@ -42,26 +42,42 @@ async function answerCurrentRound(pages, roundNum) {
   );
 }
 
-// Read the revealed answers for the current round off the round panel (the answers list
-// doubles as the accuse selection), assert all five seats (four guests + the AI) are
-// present, and return the AI's fake name. Names are hidden on screen, so read the
-// data-seat hook each card carries.
-async function revealNamesIncludeAi(page, roundNum) {
-  const roundBlock = page.locator('.round-panel', {
-    has: page.locator('.chat-r', { hasText: `round ${roundNum}` }),
-  });
-  await expect
-    .poll(async () => roundBlock.locator('.answer-card').count(), { timeout: 40_000 })
-    .toBeGreaterThanOrEqual(5);
+// The current round's answer cards (the answers list doubles as the accuse selection).
+async function answerCards(page, roundNum) {
+  const cards = page
+    .locator('.round-panel', { has: page.locator('.chat-r', { hasText: `round ${roundNum}` }) })
+    .locator('.answer-card');
+  await expect.poll(async () => cards.count(), { timeout: 40_000 }).toBeGreaterThanOrEqual(5);
+  return cards;
+}
 
-  const names = await roundBlock.locator('.answer-card')
-    .evaluateAll((cards) => cards.map((c) => c.dataset.seat));
-  const unique = [...new Set(names)];
-  expect(unique, `round ${roundNum} reveal should show exactly five names`).toHaveLength(5);
+// The reveal must be anonymous: five cards, and the only seat label on any of them is the
+// viewer's own "(you)". The podium row still names every seat, so the AI's fake name is
+// read from there — the one roster name that isn't a guest's.
+async function revealIsAnonymous(page, roundNum) {
+  const cards = await answerCards(page, roundNum);
+  expect(await cards.count(), `round ${roundNum} reveal should show five answers`).toBe(5);
+  expect(await cards.locator('.answer-card-head').allInnerTexts()).toEqual(['(you)']);
 
-  const ai = unique.find((n) => !GUESTS.includes(n));
-  expect(ai, 'exactly one revealed name should not belong to a guest — that is the AI').toBeTruthy();
+  const names = (await page.locator('.podium-row .podium-name').allInnerTexts())
+    .map((s) => s.replace(/\s*\(you\)\s*$/, '').trim());
+  expect(new Set(names).size, 'the podium row should name all five seats').toBe(5);
+  const ai = names.find((n) => !GUESTS.includes(n));
+  expect(ai, 'exactly one podium name should not belong to a guest — that is the AI').toBeTruthy();
   return ai;
+}
+
+// Cards carry no names, but every guest types "r<round> from <name> …", so a card is found
+// by its text. guest = null finds the AI's card: the one no guest wrote.
+async function answerCardBy(page, roundNum, guest) {
+  const cards = await answerCards(page, roundNum);
+  const texts = await cards.locator('.answer-card-text').allInnerTexts();
+  const idx = texts.findIndex((t) => {
+    const author = t.match(new RegExp(`^r${roundNum} from (\\w+)`))?.[1];
+    return guest ? author === guest : !GUESTS.includes(author);
+  });
+  expect(idx, `no round ${roundNum} card for ${guest ?? 'the AI'}`).toBeGreaterThanOrEqual(0);
+  return cards.nth(idx);
 }
 
 async function waitForAccusePhase(page) {
@@ -70,8 +86,8 @@ async function waitForAccusePhase(page) {
 
 // Long-press-to-accuse: the AccuseButton confirms after an ~800ms hold, so press with the
 // real mouse and hold ~1.1s (no fixed sleeps anywhere else — this one is the gesture).
-async function longPressAccuse(page, name) {
-  const btn = page.locator(`.answer-card[data-seat="${name}"] .accuse-hold`);
+async function longPressAccuse(page, card) {
+  const btn = card.locator('.accuse-hold');
   await btn.waitFor({ state: 'visible', timeout: 20_000 });
   await btn.scrollIntoViewIfNeeded();
   await btn.hover(); // moves the real cursor over the button (and into view)
@@ -119,12 +135,13 @@ test('four guests play a full game to a detector win', async ({ browser }) => {
     await host.getByRole('button', { name: 'start game' }).click();
     for (const page of pages) await expect(page).toHaveURL(/\/game$/);
 
-    // 5) Rounds 1 & 2: everyone answers; the reveal shows all five names incl. the AI.
+    // 5) Rounds 1 & 2: everyone answers; the reveal shows five unlabeled answers, and the
+    //    podium row names the AI's seat.
     await answerCurrentRound(pages, 1);
-    const aiName = await revealNamesIncludeAi(host, 1);
+    const aiName = await revealIsAnonymous(host, 1);
 
     await answerCurrentRound(pages, 2);
-    const aiNameAgain = await revealNamesIncludeAi(host, 2);
+    const aiNameAgain = await revealIsAnonymous(host, 2);
     expect(aiNameAgain).toBe(aiName); // the AI keeps its identity across rounds
 
     // 6) Round 3: a wrong accusation — a guest accuses another guest (a known human).
@@ -132,7 +149,7 @@ test('four guests play a full game to a detector win', async ({ browser }) => {
     await answerCurrentRound(pages, 3);
     const accuser = pages[1]; // Bravo
     await waitForAccusePhase(accuser);
-    await longPressAccuse(accuser, GUESTS[2]); // accuse Cyrus, a human => wrong
+    await longPressAccuse(accuser, await answerCardBy(accuser, 3, GUESTS[2])); // Cyrus's card => wrong
     // The accusation registered (banner shows during the veto window)...
     await expect(accuser.getByText('you accused an answer', { exact: false })).toBeVisible({ timeout: 30_000 });
     // ...and once it resolves unvetoed, the accuser's token pips drop 3 -> 2 (persistent).
@@ -145,7 +162,7 @@ test('four guests play a full game to a detector win', async ({ browser }) => {
     await answerCurrentRound(pages, 4);
     const catcher = pages[0]; // Alice, still holding all three tokens
     await waitForAccusePhase(catcher);
-    await longPressAccuse(catcher, aiName);
+    await longPressAccuse(catcher, await answerCardBy(catcher, 4, null)); // the card no guest wrote
 
     await expect(host.getByText('[ DETECTOR WINS ]')).toBeVisible({ timeout: 40_000 });
     await expect(host.locator('.ai-name')).toHaveText(aiName);

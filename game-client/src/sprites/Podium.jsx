@@ -15,7 +15,7 @@ export default function Podium({ name, config, state = "neutral", isMe = false, 
         <Crate tokens={tokens} width={crateW} />
       </div>
       <div className="podium-name" title={name}>
-        {isMe ? "(you)" : name}
+        {name}{isMe ? " (you)" : ""}
       </div>
     </div>
   );

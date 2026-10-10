@@ -151,15 +151,16 @@ export default function GamePage() {
   // can't veto stay on the accusing phase but must not be offered the hold buttons.
   const accusationLocked = !!accusationMade && phase !== "prompting";
 
-  // Names stay hidden until the end screen: in a room of friends any name nobody owns is
-  // the AI, and the AI never accuses or vetoes, so naming accusers/vetoers clears humans.
+  // The answer cards are anonymous: in a room of friends everyone knows which roster name
+  // is the AI, so the game is spotting which ANSWER is its. Nothing here may tie a card to
+  // a seat — name the accuser, never the accused.
   const accusedLine = !accusationMade
     ? ""
     : accusationMade.accuser === myName
       ? "you accused an answer"
       : accusationMade.accused === myName
-        ? "someone accused you"
-        : "someone accused an answer";
+        ? `${accusationMade.accuser} accused your answer`
+        : `${accusationMade.accuser} accused an answer`;
 
   // Reverse mode: which players the AI read correctly this round (their answer's author
   // matched its guess) — drives the podium reactions once the guesses land.
@@ -198,8 +199,7 @@ export default function GamePage() {
       return eliminated.includes(name) ? "defeated" : "sad";
     }
     if (accusationMade && phase === "accusing") {
-      if (name === accusationMade.accuser) return "mad";
-      if (name === accusationMade.accused) return "confused";
+      if (name === accusationMade.accuser) return "mad"; // the accused's podium stays put
     }
     if (phase === "revealing") return revealFlash ? "excited" : "neutral";
     if (phase === "prompting") return typing[name] ? "thinking" : "neutral";
@@ -211,7 +211,7 @@ export default function GamePage() {
       {fakeOut && (
         <div className="fakeout-overlay">
           <div className="fakeout-flash" />
-          <div className="fakeout-text">someone used a FAKE-OUT!</div>
+          <div className="fakeout-text">{fakeOut.vetoer} used a FAKE-OUT!</div>
         </div>
       )}
 
@@ -257,7 +257,7 @@ export default function GamePage() {
             {roster.map((p) => (
               <Podium
                 key={p.displayName}
-                name={p.displayName === myName ? myName : ""}
+                name={p.displayName}
                 config={p.character}
                 state={podiumState(p.displayName)}
                 isMe={p.displayName === myName}
@@ -342,7 +342,7 @@ export default function GamePage() {
                           : iAmEliminated
                             ? "// you're out of tokens — answer-only."
                             : accusation?.priorityName && !iHavePriority
-                              ? "// someone has priority. hold on…"
+                              ? `// ${accusation.priorityName} has priority. hold on…`
                               : myTokens <= 0
                                 ? "// no tokens left — you can't accuse."
                                 : "// spot the machine. hold to accuse."}
@@ -362,10 +362,12 @@ export default function GamePage() {
                     const accused = accusationMade && a.displayName === accusationMade.accused;
                     const cls = ["answer-card", mine ? "mine" : "", accused ? "accused" : "", blank ? "blank" : ""].join(" ").trim();
                     return (
-                      <div key={i} className={cls} data-seat={a.displayName}>
-                        <div className="answer-card-head">
-                          <span className="seat-name">{mine ? "(you)" : `answer ${i + 1}`}</span>
-                        </div>
+                      <div key={i} className={cls}>
+                        {mine && (
+                          <div className="answer-card-head">
+                            <span className="seat-name">(you)</span>
+                          </div>
+                        )}
                         <div className="answer-card-text">{blank ? "(no answer — half a token)" : a.text}</div>
                         {phase === "accusing" && !mine && !accusationLocked && (
                           <AccuseButton name={a.displayName} disabled={!canIAccuse} onConfirm={onAccuse} />
@@ -380,7 +382,9 @@ export default function GamePage() {
 
                 {resolved && (
                   <div className={`chat-system ${resolved.correct ? "good" : "bad"}`}>
-                    {resolved.correct ? "CORRECT — caught it!" : "wrong. token burned."}
+                    {resolved.correct
+                      ? "CORRECT — caught it!"
+                      : `${resolved.accuser === myName ? "your" : `${resolved.accuser}'s`} accusation was wrong. token burned.`}
                   </div>
                 )}
               </div>

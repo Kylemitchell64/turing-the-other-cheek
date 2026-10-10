@@ -125,7 +125,7 @@ test('every screen survives the phone-viewport visual sweep', async ({ browser }
 
     // Reveal: wait for the round's authors to land in the scrollback.
     await expect
-      .poll(async () => host.locator('.answer-card .seat-name').count(), { timeout: 40_000 })
+      .poll(async () => host.locator('.answer-card').count(), { timeout: 40_000 })
       .toBeGreaterThanOrEqual(GUESTS.length + 1);
     await auditScreen(host, '11-game-reveal', findings);
 
