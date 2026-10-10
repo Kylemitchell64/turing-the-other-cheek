@@ -61,6 +61,7 @@ const PET_MUTTERS = ["♥", "mm", "...ok", "♥♥", "purr", "fine. that's nice.
 
 // phase 32: throw tuning. Pointer speeds are px/ms over the last VELOCITY_MS of the drag.
 const VELOCITY_MS = 150;
+const STILL_MS = 140; // no move for this long before release = it was held still
 const THROW_SPEED = 0.55; // slower than this on release = a plain drop (phase-28 behavior)
 const HARD_THROW_SPEED = 1.6; // a hard throw costs two nudges
 // pet: a slow, mostly-sideways stroke. Lift it (or move fast) and it's a pickup instead.
@@ -668,14 +669,20 @@ export default function MenuWanderer() {
     apply();
   };
 
-  // release velocity in px/ms over the last VELOCITY_MS — a finger that stopped before
-  // letting go has none, so a careful drop stays a drop.
-  const releaseVelocity = (d, e) => {
-    const t = performance.now();
-    const pts = [...d.samples, { x: e.clientX, y: e.clientY, t }].filter((s) => t - s.t <= VELOCITY_MS);
-    if (pts.length < 2) return { vx: 0, vy: 0 };
-    const a = pts[0];
-    const b = pts[pts.length - 1];
+  // release velocity in px/ms across the last VELOCITY_MS of pointer MOVES. The release
+  // point itself is left out — pointerup usually lands exactly where the last move did, so
+  // counting it would read a flick as slower than it was. A finger that sat still for
+  // STILL_MS before letting go has no velocity, so a careful drop stays a drop.
+  const releaseVelocity = (d) => {
+    const s = d.samples;
+    const b = s[s.length - 1];
+    if (!b || performance.now() - b.t > STILL_MS) return { vx: 0, vy: 0 };
+    let a = b;
+    for (let i = s.length - 2; i >= 0; i--) {
+      a = s[i];
+      if (b.t - a.t > VELOCITY_MS) break;
+    }
+    if (a === b) return { vx: 0, vy: 0 };
     const dt = Math.max(8, b.t - a.t);
     return { vx: (b.x - a.x) / dt, vy: (b.y - a.y) / dt };
   };
@@ -693,7 +700,7 @@ export default function MenuWanderer() {
     // dropped: fall to the floor, land with a squash, then count it as a nudge. It stays
     // "dropping" (layer lifted above the panels) until it actually touches down.
     const pos = typeof d.pos === "number" ? d.pos : d.startPos;
-    const { vx, vy } = e.type === "pointercancel" ? { vx: 0, vy: 0 } : releaseVelocity(d, e);
+    const { vx, vy } = e.type === "pointercancel" ? { vx: 0, vy: 0 } : releaseVelocity(d);
     const speed = Math.hypot(vx, vy);
     const thrown = speed >= THROW_SPEED;
     const hard = speed >= HARD_THROW_SPEED;

@@ -26,6 +26,24 @@ async function poke(page) {
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 }
 
+// Press on the mascot and lift it a little. It wanders, so the box read and the press can
+// race on a slow runner; a missed press touches nothing, so just try again.
+async function grab(page) {
+  const body = page.locator('.wanderer-body');
+  for (let i = 0; i < 4; i++) {
+    const box = await page.locator('.home-robot-walker').boundingBox();
+    const sx = box.x + box.width / 2;
+    const sy = box.y + box.height / 2;
+    await page.mouse.move(sx, sy);
+    await page.mouse.down();
+    await page.mouse.move(sx + 20, sy - 30, { steps: 3 });
+    if (await body.evaluate((el) => el.classList.contains('held'))) return { box, sx, sy };
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+  }
+  throw new Error('could not pick the mascot up');
+}
+
 // Phase 32: the crash-out ending is random; the page reads window.__mascotTest to force one.
 async function forceEnding(page, ending, extra = {}) {
   await page.addInitScript((hook) => { window.__mascotTest = hook; }, { ending, ...extra });
@@ -80,11 +98,7 @@ test('dragging the mascot picks it up and dropping it counts as a nudge', async 
   const walker = page.locator('.home-robot-walker');
   const body = page.locator('.wanderer-body');
 
-  const box = await walker.boundingBox();
-  const sx = box.x + box.width / 2;
-  const sy = box.y + box.height / 2;
-  await page.mouse.move(sx, sy);
-  await page.mouse.down();
+  const { box, sx, sy } = await grab(page);
   await page.mouse.move(sx + 60, sy - 80, { steps: 8 });
   await page.mouse.move(sx + 160, sy - 120, { steps: 8 });
   await expect(body).toHaveClass(/held/);
@@ -106,23 +120,22 @@ test('throwing the mascot sends it flying, and a hard throw counts double', asyn
   const walker = page.locator('.home-robot-walker');
   const body = page.locator('.wanderer-body');
 
-  const box = await walker.boundingBox();
-  const sx = box.x + box.width / 2;
-  const sy = box.y + box.height / 2;
-  await page.mouse.move(sx, sy);
-  await page.mouse.down();
-  await page.mouse.move(sx + 20, sy - 30, { steps: 3 });
+  const { box, sx, sy } = await grab(page);
   await expect(body).toHaveClass(/held/);
   // a fast flick up and to the right, released mid-swing
-  await page.mouse.move(sx + 220, sy - 260, { steps: 2 });
+  await page.mouse.move(sx + 320, sy - 330);
   await page.mouse.up();
 
   await expect(body).toHaveClass(/thrown/);
+  // it really flies: well above where it was standing (it may bounce off a wall, so the
+  // sideways distance isn't a fixed number)
+  const floorY = box.y;
+  await expect.poll(async () => (await body.boundingBox()).y, { timeout: 3000, intervals: [30] })
+    .toBeLessThan(floorY - 80);
   await expect(body).not.toHaveClass(/thrown/);
   await expect(page.locator('.wanderer-mutter')).toHaveText('WHOA');
-  const landed = await walker.boundingBox();
-  expect(Math.abs(landed.x - box.x)).toBeGreaterThan(40); // it went somewhere
-  expect(landed.y).toBeGreaterThan(box.y - 10); // and came back down to the floor
+  const landed = await body.boundingBox();
+  expect(landed.y).toBeGreaterThan(floorY - 20); // and came back down to the floor
 
   // two nudges already, so one poke makes three ("hm."), not two ("hey")
   await page.waitForTimeout(1400);
