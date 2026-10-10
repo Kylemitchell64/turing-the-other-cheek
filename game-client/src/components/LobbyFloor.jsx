@@ -171,7 +171,8 @@ export default function LobbyFloor() {
       const s = tap;
       tap = null;
       if (!s || s.id !== e.pointerId || e.type === "pointercancel") return;
-      if (Math.hypot(e.clientX - s.x, e.clientY - s.y) < 10 && performance.now() - s.t < 500) pokeMascot(s.name);
+      // a tap, not a drag or a scroll (generous on time: a busy phone can lag the pointerup)
+      if (Math.hypot(e.clientX - s.x, e.clientY - s.y) < 10 && performance.now() - s.t < 800) pokeMascot(s.name);
     };
     document.addEventListener("pointerdown", down);
     document.addEventListener("pointerup", up);

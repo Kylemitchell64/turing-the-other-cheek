@@ -31,6 +31,12 @@ async function tapSprite(page, selector) {
     const r = el.getBoundingClientRect();
     const x = r.left + r.width / 2;
     const y = r.top + r.height / 2;
+    // a floor-mate standing in front of my own mascot: the tap is my mascot's, not a poke
+    const own = document.querySelector('.home-robot-walker');
+    if (own && own !== el) {
+      const o = own.getBoundingClientRect();
+      if (x >= o.left && x <= o.right && y >= o.top && y <= o.bottom) return null;
+    }
     const under = document.elementFromPoint(x, y);
     if (under && under.closest('button, a, input, textarea, select, label, [role="button"], .music-widget')) return null;
     return { x, y };
@@ -90,7 +96,7 @@ test('the lobby floor is shared: crashes make others flinch, pokes make them sto
     // and on Ben's phone her floor-mate does the same. (Retry: it wanders, and a tap that
     // lands on Ben's own mascot is his, not a poke.)
     const amyOnBen = ben.locator('.floormate[data-name="FloorAmy"]');
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 120; i++) {
       if (await tapSprite(ben, '.floormate[data-name="FloorAmy"]')) {
         await ben.waitForTimeout(400);
         if (await amyOnBen.evaluate((el) => el.classList.contains('stomping'))) break;
