@@ -43,18 +43,19 @@ async function answerCurrentRound(pages, roundNum) {
 }
 
 // Read the revealed answers for the current round off the round panel (the answers list
-// doubles as the accuse selection), assert all five roster names (four guests + the AI)
-// are present, and return the AI's fake name.
+// doubles as the accuse selection), assert all five seats (four guests + the AI) are
+// present, and return the AI's fake name. Names are hidden on screen, so read the
+// data-seat hook each card carries.
 async function revealNamesIncludeAi(page, roundNum) {
   const roundBlock = page.locator('.round-panel', {
     has: page.locator('.chat-r', { hasText: `round ${roundNum}` }),
   });
   await expect
-    .poll(async () => roundBlock.locator('.answer-card .seat-name').count(), { timeout: 40_000 })
+    .poll(async () => roundBlock.locator('.answer-card').count(), { timeout: 40_000 })
     .toBeGreaterThanOrEqual(5);
 
-  const names = (await roundBlock.locator('.answer-card .seat-name').allInnerTexts())
-    .map((s) => s.replace(/\s*\(you\)\s*$/, '').trim());
+  const names = await roundBlock.locator('.answer-card')
+    .evaluateAll((cards) => cards.map((c) => c.dataset.seat));
   const unique = [...new Set(names)];
   expect(unique, `round ${roundNum} reveal should show exactly five names`).toHaveLength(5);
 
@@ -70,7 +71,7 @@ async function waitForAccusePhase(page) {
 // Long-press-to-accuse: the AccuseButton confirms after an ~800ms hold, so press with the
 // real mouse and hold ~1.1s (no fixed sleeps anywhere else — this one is the gesture).
 async function longPressAccuse(page, name) {
-  const btn = page.getByLabel(`hold to accuse ${name}`);
+  const btn = page.locator(`.answer-card[data-seat="${name}"] .accuse-hold`);
   await btn.waitFor({ state: 'visible', timeout: 20_000 });
   await btn.scrollIntoViewIfNeeded();
   await btn.hover(); // moves the real cursor over the button (and into view)
@@ -133,7 +134,7 @@ test('four guests play a full game to a detector win', async ({ browser }) => {
     await waitForAccusePhase(accuser);
     await longPressAccuse(accuser, GUESTS[2]); // accuse Cyrus, a human => wrong
     // The accusation registered (banner shows during the veto window)...
-    await expect(accuser.getByText(`${GUESTS[1]} accused ${GUESTS[2]}`)).toBeVisible({ timeout: 30_000 });
+    await expect(accuser.getByText('you accused an answer', { exact: false })).toBeVisible({ timeout: 30_000 });
     // ...and once it resolves unvetoed, the accuser's token pips drop 3 -> 2 (persistent).
     await expect
       .poll(async () => accuser.locator('.topbar .tokens .pip.on').count(), { timeout: 30_000 })

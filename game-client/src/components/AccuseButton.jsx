@@ -58,7 +58,7 @@ export default function AccuseButton({ name, disabled, onConfirm }) {
       // Don't let a long-press trigger the OS text-selection / context menu on mobile.
       onContextMenu={(e) => e.preventDefault()}
       style={{ touchAction: "none" }}
-      aria-label={`hold to accuse ${name}`}
+      aria-label="hold to accuse this answer"
     >
       <span className="accuse-fill" style={{ width: `${progress * 100}%` }} />
       <span className="accuse-label">
