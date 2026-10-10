@@ -20,10 +20,26 @@ async function guestLogin(page, name) {
   await expect(createLobby).toBeVisible();
 }
 
-// The sprite wanders, so aim at its live bounding box every time.
+// The sprite wanders, so aim at its live bounding box every time. A tap with a button
+// under it belongs to the button (phase 31), so only tap when the spot is clear — otherwise
+// a stray poke could open "join" or similar mid-test.
 async function poke(page) {
-  const box = await page.locator('.home-robot-walker').boundingBox();
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  for (let i = 0; i < 200; i++) {
+    const spot = await clearSpot(page);
+    if (spot) { await page.mouse.click(spot.x, spot.y); return; }
+    await page.waitForTimeout(100); // it'll wander off the button soon
+  }
+  throw new Error('the mascot never left the buttons alone');
+}
+function clearSpot(page) {
+  return page.evaluate(() => {
+    const r = document.querySelector('.home-robot-walker').getBoundingClientRect();
+    const x = r.left + r.width / 2;
+    const y = r.top + r.height / 2;
+    const under = document.elementFromPoint(x, y);
+    if (under && under.closest('button, a, input, textarea, select, label, [role="button"], .music-widget')) return null;
+    return { x, y };
+  });
 }
 
 // Press on the mascot and lift it a little. It wanders, so the box read and the press can
@@ -49,9 +65,15 @@ async function forceEnding(page, ending, extra = {}) {
   await page.addInitScript((hook) => { window.__mascotTest = hook; }, { ending, ...extra });
 }
 
-// eleven pokes in a row = crash-out (the counter starts from wherever it is, so start calm)
+// eleven pokes in a row = crash-out. It wanders between the box read and the click, so a
+// poke can miss; keep going until it actually snaps (it never needs more than eleven hits).
 async function crashIt(page) {
-  for (let i = 0; i < 11; i++) { await poke(page); await page.waitForTimeout(150); }
+  const body = page.locator('.wanderer-body');
+  for (let i = 0; i < 30; i++) {
+    if (await body.evaluate((el) => /crash-/.test(el.className))) return;
+    await poke(page);
+    await page.waitForTimeout(150);
+  }
 }
 
 test('poking the mascot annoys it, then it crashes out and recovers', async ({ page }) => {
@@ -246,4 +268,51 @@ test('each crash-out picks an ending and leaves a scar for the session', async (
   // scars are session-only: a reload wipes them
   await page.reload();
   await expect(page.locator('.wanderer-body')).toHaveAttribute('data-scars', '0');
+});
+
+// ---- phase 34: "most hated by the mascot", counted per phone ----
+
+const CRASH_KEY = 'turing.mascotCrashOuts';
+
+test('crash-outs are counted on this phone, survive a reload, and earn a hard hat', async ({ page }) => {
+  await forceEnding(page, 'ragequit');
+  await guestLogin(page, 'mascot_hardhat');
+  const body = page.locator('.wanderer-body');
+
+  // one short of the hard hat (seeded the way a phone that's been at it a while would be)
+  await page.evaluate((k) => localStorage.setItem(k, '9'), CRASH_KEY);
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'create lobby' })).toBeVisible();
+  await expect(page.locator('.wanderer-hardhat')).toHaveCount(0);
+
+  await crashIt(page);
+  await expect(body).toHaveClass(/crash-ragequit/);
+  await expect(body).not.toHaveClass(/crash-/);
+  await expect(page.locator('.wanderer-hardhat')).toBeAttached();
+  await expect(page.locator('.home-robot .wanderer-mutter')).toContainText('hard hat');
+  expect(await page.evaluate((k) => localStorage.getItem(k), CRASH_KEY)).toBe('10');
+
+  // unlike the scars, the count and the hat survive a reload
+  await page.reload();
+  await expect(page.locator('.wanderer-body')).toHaveAttribute('data-scars', '0');
+  await expect(page.locator('.wanderer-hardhat')).toBeAttached();
+
+  // the stats page shows it, clearly as a this-phone number
+  await page.goto('/stats');
+  await expect(page.locator('.mascot-hate')).toContainText('most hated by the mascot: 10 crash-outs (this phone)');
+});
+
+test('the per-phone counter degrades quietly when storage is blocked', async ({ page }) => {
+  await page.addInitScript(() => {
+    Storage.prototype.getItem = function (k) { if (String(k).startsWith('turing.mascot')) throw new Error('blocked'); return null; };
+    Storage.prototype.setItem = function (k) { if (String(k).startsWith('turing.mascot')) throw new Error('blocked'); };
+  });
+  await forceEnding(page, 'ragequit');
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e)));
+  await guestLogin(page, 'mascot_nostore');
+  await crashIt(page);
+  await expect(page.locator('.wanderer-body')).toHaveClass(/crash-ragequit/);
+  await expect(page.locator('.wanderer-body')).not.toHaveClass(/crash-/);
+  expect(errors).toEqual([]);
 });

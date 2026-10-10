@@ -2264,6 +2264,10 @@ button.ops-pause { padding: 0.55rem 1rem; width: auto; }
   .floormate .floormate-body > svg, .act-flinch > svg, .act-stomp > svg { animation: none !important; }
 }
 
+/* phase 34: the per-phone "most hated" line on the Stats page */
+.mascot-hate { margin: 1.1rem 0 0; font-size: 0.8rem; color: var(--muted); letter-spacing: 0.5px; }
+.mascot-hate b { color: var(--neon); }
+
 /* battle scars ride on top of the sprite, same box, same transforms */
 .wanderer-scars { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
 

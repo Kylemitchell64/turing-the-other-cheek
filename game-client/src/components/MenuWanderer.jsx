@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthContext";
 import { api } from "../api/client";
 import { sfxBus } from "../audio/sfx";
 import { mascotBus } from "./mascotBus";
+import { readCrashOuts, bumpCrashOuts, HARD_HAT_AT } from "./mascotStats";
 
 // The menu mascot (phase 25, grown out of the phase-21 HomeRobot). It wanders along the
 // bottom of every menu screen, behind the panels: walks left-right, flips at the edges,
@@ -50,6 +51,12 @@ import { mascotBus } from "./mascotBus";
 // when someone ELSE's mascot crashes out it flinches and looks over ("did you see that?").
 // If another player pokes your character on their phone, it turns and stomps over to
 // theirs, muttering their name. It only listens while the lobby floor is mounted.
+//
+// Phase 34: every crash-out also ticks a per-phone counter (mascotStats: localStorage,
+// nothing sent anywhere) that the Stats page shows as "most hated by the mascot". At
+// HARD_HAT_AT crash-outs on this phone it starts wearing a hard hat around you — another
+// mascot-only overlay like the scars, never part of CharacterSprite or the saved character
+// config, so it can't follow anyone into a game (ADR 0005).
 // Every one of these is off under prefers-reduced-motion, and all of the new gestures go
 // through the same phase-31 document-level hit test: the sprite still takes no pointer
 // events and nothing here calls preventDefault on a tap meant for real UI.
@@ -165,6 +172,7 @@ export default function MenuWanderer() {
   const [scolder, setScolder] = useState(null); // { pos, dir, walking, line } the 2nd robot
   const [lastEnding, setLastEnding] = useState(null);
   const [scars, setScars] = useState(() => sessionScars);
+  const [hardHat, setHardHat] = useState(() => readCrashOuts() >= HARD_HAT_AT); // phase 34
   const timers = useRef([]);
   const after = useCallback((ms, fn) => { const t = setTimeout(fn, ms); timers.current.push(t); return t; }, []);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
@@ -394,8 +402,17 @@ export default function MenuWanderer() {
     after(ms, () => setMutter((m) => (m === text ? "" : m)));
   }, [after]);
 
+  // phase 34: a line to say once it's back up (set when this crash-out earned the hard hat)
+  const pendingLine = useRef(null);
+
   // Every ending finishes here: clean slate, plus one more scar for the session.
   const recover = useCallback(() => {
+    if (pendingLine.current) {
+      const line = pendingLine.current;
+      pendingLine.current = null;
+      setHardHat(true);
+      after(400, () => say(line, 3200));
+    }
     nudges.current = [];
     setMood("calm");
     sessionScars = Math.min(SCARS.length, sessionScars + 1);
@@ -405,7 +422,7 @@ export default function MenuWanderer() {
     phase.current = { ticks: randInt(30, 60) };
     mode.current = "idle";
     setPose((q) => ({ ...q, walking: false, look: 0 }));
-  }, []);
+  }, [after, say]);
 
   const stage = useCallback((m) => { mode.current = m; setCrashStage(m); }, []);
   const edgeFor = (pos) => (pos < 45 ? -16 : 106); // just past whichever edge is closer
@@ -509,6 +526,8 @@ export default function MenuWanderer() {
     setMutter("");
     sfxBus.emit("crash");
     mascotBus.emit({ type: "self-crash" }); // phase 33: the lobby floor tells the room
+    // phase 34: count it on this phone; the one that reaches the threshold earns the hat
+    if (bumpCrashOuts() === HARD_HAT_AT) pendingLine.current = "fine. I'm wearing a hard hat now.";
     const ending = pickEnding();
     setLastEnding(ending);
     after(950, () => {
@@ -924,6 +943,7 @@ export default function MenuWanderer() {
             <RobotSprite size={60 * scale} walking={!reduced && pose.walking} looking={pose.look} />
           )}
           {!reduced && scars > 0 && <Scars count={scars} robot={!character} />}
+          {!reduced && hardHat && <HardHat robot={!character} />}
           {fx && <Particles key={fxKey} kind={fx} />}
         </div>
         {(crashStage === "pack" || crashStage === "leave" || crashStage === "away" || crashStage === "return") && (
@@ -999,6 +1019,24 @@ function Scars({ count, robot }) {
         <rect className="wanderer-scar scar-sling" x={g.arm[0]} y={g.arm[1]} width="3.4" height="3"
           rx="0.6" fill="#f4f4f4" stroke="#9aa" strokeWidth="0.3" />
       )}
+    </svg>
+  );
+}
+
+// Phase 34: the hard hat it wears once you've made it crash out HARD_HAT_AT times on this
+// phone. Same overlay trick as the scars (sprite viewBox, rides the same transforms), and
+// the same rule: mascot-only, so it can never show on a podium or in a game.
+function HardHat({ robot }) {
+  const vb = robot ? "0 0 28 40" : "0 0 32 40";
+  // sits on the robot's head shell (x 5..23, top y 4) / the chibi's crown (x 6.5..25.5, top y 2)
+  const d = robot
+    ? { dome: "M5.5 4.6 Q5.5 -1.2 14 -1.2 Q22.5 -1.2 22.5 4.6 Z", brim: [3.6, 4, 20.8], ridge: [13.2, -1.2, 5.6] }
+    : { dome: "M6.6 6.2 Q6.6 -0.6 16 -0.6 Q25.4 -0.6 25.4 6.2 Z", brim: [4.6, 5.6, 22.8], ridge: [15, -0.6, 6.6] };
+  return (
+    <svg className="wanderer-scars wanderer-hardhat" viewBox={vb} shapeRendering="crispEdges" aria-hidden="true">
+      <path d={d.dome} fill="#f2c94c" stroke="#a8811f" strokeWidth="0.35" shapeRendering="geometricPrecision" />
+      <rect x={d.brim[0]} y={d.brim[1]} width={d.brim[2]} height="1.5" rx="0.6" fill="#e0b13a" stroke="#a8811f" strokeWidth="0.3" />
+      <rect x={d.ridge[0]} y={d.ridge[1]} width="2" height={d.ridge[2]} fill="#d9a92e" />
     </svg>
   );
 }
