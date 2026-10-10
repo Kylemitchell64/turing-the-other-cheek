@@ -26,7 +26,18 @@ async function poke(page) {
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 }
 
+// Phase 32: the crash-out ending is random; the page reads window.__mascotTest to force one.
+async function forceEnding(page, ending, extra = {}) {
+  await page.addInitScript((hook) => { window.__mascotTest = hook; }, { ending, ...extra });
+}
+
+// eleven pokes in a row = crash-out (the counter starts from wherever it is, so start calm)
+async function crashIt(page) {
+  for (let i = 0; i < 11; i++) { await poke(page); await page.waitForTimeout(150); }
+}
+
 test('poking the mascot annoys it, then it crashes out and recovers', async ({ page }) => {
+  await forceEnding(page, 'portal');
   await guestLogin(page, 'mascot_poker');
   const body = page.locator('.wanderer-body');
   await expect(body).toHaveClass(/mood-calm/);
@@ -77,6 +88,8 @@ test('dragging the mascot picks it up and dropping it counts as a nudge', async 
   await page.mouse.move(sx + 60, sy - 80, { steps: 8 });
   await page.mouse.move(sx + 160, sy - 120, { steps: 8 });
   await expect(body).toHaveClass(/held/);
+  // hold still before letting go: since phase 32 a release mid-swing is a throw
+  await page.waitForTimeout(250);
   await page.mouse.up();
 
   // falls, lands, gets annoyed about it
@@ -84,4 +97,140 @@ test('dragging the mascot picks it up and dropping it counts as a nudge', async 
   await expect(body).toHaveClass(/mood-annoyed/);
   const after = await walker.boundingBox();
   expect(after.x).toBeGreaterThan(box.x + 60);
+});
+
+// ---- phase 32 ----
+
+test('throwing the mascot sends it flying, and a hard throw counts double', async ({ page }) => {
+  await guestLogin(page, 'mascot_thrower');
+  const walker = page.locator('.home-robot-walker');
+  const body = page.locator('.wanderer-body');
+
+  const box = await walker.boundingBox();
+  const sx = box.x + box.width / 2;
+  const sy = box.y + box.height / 2;
+  await page.mouse.move(sx, sy);
+  await page.mouse.down();
+  await page.mouse.move(sx + 20, sy - 30, { steps: 3 });
+  await expect(body).toHaveClass(/held/);
+  // a fast flick up and to the right, released mid-swing
+  await page.mouse.move(sx + 220, sy - 260, { steps: 2 });
+  await page.mouse.up();
+
+  await expect(body).toHaveClass(/thrown/);
+  await expect(body).not.toHaveClass(/thrown/);
+  await expect(page.locator('.wanderer-mutter')).toHaveText('WHOA');
+  const landed = await walker.boundingBox();
+  expect(Math.abs(landed.x - box.x)).toBeGreaterThan(40); // it went somewhere
+  expect(landed.y).toBeGreaterThan(box.y - 10); // and came back down to the floor
+
+  // two nudges already, so one poke makes three ("hm."), not two ("hey")
+  await page.waitForTimeout(1400);
+  await poke(page);
+  await expect(page.locator('.wanderer-mutter')).toHaveText('hm.');
+});
+
+test('petting the mascot calms it back down', async ({ page }) => {
+  await guestLogin(page, 'mascot_petter');
+  const walker = page.locator('.home-robot-walker');
+  const body = page.locator('.wanderer-body');
+
+  for (let i = 0; i < 5; i++) { await poke(page); await page.waitForTimeout(150); }
+  await expect(body).toHaveClass(/mood-irritated/);
+
+  // press, wait, then rub slowly side to side across it
+  const box = await walker.boundingBox();
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
+  await page.mouse.move(cx, cy);
+  await page.mouse.down();
+  await page.waitForTimeout(300);
+  let x = cx;
+  for (let pass = 0; pass < 8; pass++) {
+    const dir = pass % 2 ? -1 : 1;
+    for (let i = 0; i < 6; i++) { x += dir * 4; await page.mouse.move(x, cy); await page.waitForTimeout(20); }
+  }
+  await expect(body).toHaveClass(/act-pet/);
+  await expect(page.locator('.wfx-hearts .wfx-p').first()).toBeAttached();
+  await page.mouse.up();
+  await expect(body).toHaveClass(/mood-calm/);
+  await expect(body).not.toHaveClass(/act-pet/);
+});
+
+test('tapping the empty floor drops a snack it walks over and eats', async ({ page }) => {
+  await guestLogin(page, 'mascot_feeder');
+  const body = page.locator('.wanderer-body');
+  await poke(page);
+  await expect(body).toHaveClass(/mood-annoyed/);
+
+  // find a spot on the floor band that is bare (no panel, nothing clickable) and not the sprite
+  const spot = await page.evaluate(() => {
+    const band = document.querySelector('.home-robot').getBoundingClientRect();
+    const sprite = document.querySelector('.home-robot-walker').getBoundingClientRect();
+    const y = band.bottom - 12;
+    for (let x = window.innerWidth - 30; x > 30; x -= 25) {
+      if (x > sprite.left - 60 && x < sprite.right + 60) continue;
+      const el = document.elementFromPoint(x, y);
+      if (el && !el.closest('button, a, input, textarea, select, label, [role="button"], .panel, .music-widget')) return { x, y };
+    }
+    return null;
+  });
+  expect(spot).not.toBeNull();
+  await page.mouse.click(spot.x, spot.y);
+
+  await expect(page.locator('.wanderer-snack')).toBeVisible();
+  await expect(body).toHaveClass(/act-eat/);
+  await expect(page.locator('.wanderer-snack')).toHaveCount(0);
+  await expect(body).not.toHaveClass(/act-eat/);
+  await expect(body).toHaveClass(/mood-calm/);
+});
+
+test('each crash-out picks an ending and leaves a scar for the session', async ({ page }) => {
+  await forceEnding(page, 'ragequit');
+  await guestLogin(page, 'mascot_scarred');
+  const layer = page.locator('.home-robot');
+  const body = page.locator('.wanderer-body');
+  await expect(body).toHaveAttribute('data-scars', '0');
+
+  // (b) rage-quit: the sign, a blink-out, a sheepish return
+  await crashIt(page);
+  await expect(body).toHaveClass(/crash-ragequit/);
+  await expect(page.locator('.wanderer-sign')).toHaveText('CONNECTION LOST');
+  await expect(body).toHaveClass(/crash-offline/);
+  await expect(body).toHaveClass(/crash-sheepish/);
+  await expect(body).not.toHaveClass(/crash-/);
+  await expect(layer).toHaveAttribute('data-last-ending', 'ragequit');
+  await expect(body).toHaveAttribute('data-scars', '1');
+  await expect(page.locator('.scar-bandage')).toBeAttached();
+
+  // (d) a second robot comes to tell YOU off
+  await page.evaluate(() => { window.__mascotTest = { ending: 'scold' }; });
+  await crashIt(page);
+  await expect(body).toHaveClass(/crash-sulk/);
+  await expect(page.locator('.wanderer-scolder')).toBeVisible();
+  await expect(page.locator('.wanderer-mutter.scold')).toContainText('mascot_scarred');
+  await expect(page.locator('.wanderer-scolder')).toHaveCount(0, { timeout: 15_000 });
+  await expect(body).toHaveAttribute('data-scars', '2');
+  await expect(page.locator('.scar-blackeye')).toBeAttached();
+
+  // (c) packs a suitcase, leaves, comes back (away time shortened by the hook)
+  await page.evaluate(() => { window.__mascotTest = { ending: 'suitcase', awayMs: 600 }; });
+  await crashIt(page);
+  await expect(body).toHaveClass(/crash-pack/);
+  await expect(page.locator('.wanderer-suitcase')).toBeVisible();
+  await expect(body).toHaveClass(/crash-away/);
+  await expect(body).toHaveClass(/crash-return/);
+  await expect(body).not.toHaveClass(/crash-/, { timeout: 30_000 });
+  await expect(body).toHaveAttribute('data-scars', '3');
+
+  // unforced: it still picks one of the four
+  await page.evaluate(() => { window.__mascotTest = {}; });
+  await crashIt(page);
+  await expect(layer).toHaveAttribute('data-last-ending', /^(portal|ragequit|suitcase|scold)$/);
+  await expect(body).not.toHaveClass(/crash-/, { timeout: 40_000 });
+  await expect(body).toHaveAttribute('data-scars', '4');
+
+  // scars are session-only: a reload wipes them
+  await page.reload();
+  await expect(page.locator('.wanderer-body')).toHaveAttribute('data-scars', '0');
 });

@@ -115,6 +115,9 @@ export function createSfx() {
     thud(t) { tone("sine", 90, 30, t, 0.22, 1.0); noise(t, 0.12, 0.4, 500); },
     // dusting off: two tiny brushes
     dust(t) { noise(t, 0.05, 0.18, 3000); noise(t + 0.14, 0.05, 0.18, 3000); },
+    // phase 32: petting (a soft rising coo) and eating a snack (three little crunches)
+    pet(t) { tone("triangle", 660, 880, t, 0.12, 0.22); },
+    nom(t) { for (let i = 0; i < 3; i++) noise(t + i * 0.13, 0.04, 0.3, 1500); },
   };
 
   const play = (name, variant = 0) => {

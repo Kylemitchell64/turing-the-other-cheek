@@ -2158,8 +2158,73 @@ button.ops-pause { padding: 0.55rem 1rem; width: auto; }
 .wfx-dust .wfx-p { color: var(--muted); font-size: 0.9rem; animation: wfx-puff 0.7s ease-out forwards; }
 @keyframes wfx-puff { from { opacity: 1; translate: 0 0; scale: 0.6; } to { opacity: 0; translate: 0 -18px; scale: 1.6; } }
 
+/* ---- phase 32: throw, pet, snack, crash-out endings, battle scars ---- */
+.wanderer-body { position: relative; }
+/* petted: eyes shut (character, via blink) / a soft pink LED (robot), gently swaying */
+.act-pet .rb-led, .act-clingy .rb-led { fill: #ff7eb6; }
+.act-pet > svg:first-child { animation: wanderer-content 0.8s ease-in-out infinite alternate; transform-origin: 50% 100%; }
+@keyframes wanderer-content { from { rotate: -3deg; } to { rotate: 3deg; } }
+.act-clingy > svg:first-child { animation: wanderer-hop 0.35s ease-in-out infinite alternate; }
+@keyframes wanderer-hop { from { translate: 0 0; } to { translate: 0 -3px; } }
+.wfx-hearts .wfx-p { color: #ff7eb6; font-size: 0.8rem; text-shadow: 0 0 5px #ff7eb6; animation: wfx-heart 0.9s ease-out forwards; }
+@keyframes wfx-heart { from { opacity: 1; translate: 0 0; scale: 0.6; } to { opacity: 0; translate: 0 -22px; scale: 1.2; } }
+.wfx-crumbs .wfx-p { color: #c98b4a; font-size: 0.6rem; animation: wfx-crumb 0.6s ease-in infinite; }
+@keyframes wfx-crumb { from { opacity: 1; translate: 0 0; } to { opacity: 0; translate: 0 10px; } }
+.wanderer-snack {
+  position: absolute;
+  bottom: 0.45rem;
+  translate: -50% 0;
+  animation: snack-drop 0.35s cubic-bezier(0.3, 1.6, 0.6, 1);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+@keyframes snack-drop { from { translate: -50% -40px; opacity: 0; } to { translate: -50% 0; opacity: 1; } }
+
+/* ending (b): rage-quit. A sign held over its head, then it blinks out like a dropped call */
+.wanderer-sign {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  translate: -50% 0;
+  white-space: nowrap;
+  font-size: 0.6rem;
+  letter-spacing: 1px;
+  font-weight: bold;
+  color: #ff3b4e;
+  background: #120607;
+  border: 1px solid #ff3b4e;
+  border-radius: 3px;
+  padding: 0.2rem 0.4rem;
+  animation: sign-wave 0.4s ease-in-out infinite alternate;
+}
+@keyframes sign-wave { from { rotate: -4deg; } to { rotate: 4deg; } }
+.crash-ragequit > svg { animation: sp-shake 0.35s linear infinite; }
+.crash-offline > svg { animation: wanderer-offline 1.6s steps(1) forwards; }
+@keyframes wanderer-offline { 0% { opacity: 0.3; } 10% { opacity: 1; } 20% { opacity: 0; } 30% { opacity: 0.6; } 40%, 100% { opacity: 0; } }
+.crash-sheepish > svg { animation: wanderer-shuffle 0.5s ease-in-out infinite alternate; transform-origin: 50% 100%; }
+@keyframes wanderer-shuffle { from { rotate: -2deg; translate: 0 1px; } to { rotate: 2deg; translate: 0 0; } }
+
+/* ending (c): the tiny suitcase, carried at its side */
+.wanderer-suitcase { position: absolute; bottom: 0.2rem; left: 85%; }
+.crash-leave > svg, .crash-return > svg { animation: wanderer-shuffle 0.3s ease-in-out infinite alternate; }
+
+/* ending (d): the second robot who scolds you — a different paint job so it reads as
+   someone else, and it walks in on a CSS transition rather than the wander tick */
+.wanderer-scolder {
+  position: absolute;
+  bottom: 0.4rem;
+  transition: left 1.8s linear;
+  filter: hue-rotate(160deg) saturate(1.3) drop-shadow(0 2px 3px rgba(0, 0, 0, 0.5));
+}
+.scolder-body { display: inline-block; }
+.wanderer-mutter.scold { color: #ffb300; border-color: #ffb300; }
+.crash-sulk > svg { animation: wanderer-shuffle 1.2s ease-in-out infinite alternate; filter: brightness(0.8); }
+
+/* battle scars ride on top of the sprite, same box, same transforms */
+.wanderer-scars { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+
 @media (prefers-reduced-motion: reduce) {
-  .held > svg, .crash-glitch > svg, .crash-flee > svg, .crash-flee .robot, .crash-dust > svg, .crash-down > svg,
+  .held > svg, .act-pet > svg, .act-clingy > svg, .crash-ragequit > svg, .crash-sheepish > svg,
+  .crash-leave > svg, .crash-return > svg, .crash-sulk > svg, .wanderer-sign, .wanderer-snack, .crash-glitch > svg, .crash-flee > svg, .crash-flee .robot, .crash-dust > svg, .crash-down > svg,
   .wfx-p, .mood-angry .robot, .mood-angry .rb-led { animation: none !important; }
 }
 
