@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback } from "react";
 import { API_BASE } from "../api/config";
+import { isInstalledApp } from "../pwa/displayMode";
 
 const AuthContext = createContext(null);
 
@@ -17,25 +18,38 @@ function isTokenExpired(token) {
   return Date.now() / 1000 > payload.exp;
 }
 
-// The JWT survives reloads via sessionStorage. Memory-only sounded clean but phones
-// killed it: mobile browsers discard background tabs constantly, and every discard
-// (or an accidental pull-to-refresh) dumped you back at the login screen mid-game.
-// sessionStorage is per-tab and dies with it, and expired tokens are rejected on load.
+// Where the JWT lives between loads depends on how the game is running (ADR 0004, 0012):
+// - browser tab: sessionStorage. Memory-only sounded clean but phones killed it (mobile
+//   browsers discard background tabs constantly), and sessionStorage is per-tab and dies
+//   with it, so a shared phone or borrowed laptop doesn't stay logged in for a month.
+// - installed app: localStorage. iOS kills a backgrounded home-screen app outright, which
+//   wipes sessionStorage, so every relaunch would land on the login screen. The installed
+//   app is the player's own phone, so the shared-device argument doesn't apply.
+// Either way, expired tokens are rejected on load.
 const TOKEN_KEY = "ttoc-token";
+
+function tokenStore() {
+  return isInstalledApp() ? localStorage : sessionStorage;
+}
 
 function loadStoredToken() {
   try {
-    const t = sessionStorage.getItem(TOKEN_KEY);
+    const store = tokenStore();
+    const t = store.getItem(TOKEN_KEY);
     if (t && !isTokenExpired(t)) return t;
-    if (t) sessionStorage.removeItem(TOKEN_KEY);
+    if (t) store.removeItem(TOKEN_KEY);
   } catch { /* private mode / storage blocked — stay memory-only */ }
   return null;
 }
 
 function storeToken(t) {
   try {
-    if (t) sessionStorage.setItem(TOKEN_KEY, t);
-    else sessionStorage.removeItem(TOKEN_KEY);
+    if (t) tokenStore().setItem(TOKEN_KEY, t);
+    else {
+      // log out of both, in case the same origin was used as a tab and as the app
+      sessionStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(TOKEN_KEY);
+    }
   } catch { /* private mode / storage blocked — stay memory-only */ }
 }
 

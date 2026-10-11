@@ -4,6 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useLobby } from "../game/LobbyContext";
 import { needsCreator } from "../auth/firstUse";
 import MaintenanceBanner from "../components/MaintenanceBanner";
+import InstallHint from "../components/InstallHint";
 import MenuWanderer from "../components/MenuWanderer";
 
 // Shown once per device before the very first guest play so nobody is surprised that a
@@ -86,6 +87,7 @@ export default function LoginPage() {
   return (
     <div className="screen center">
       <MaintenanceBanner />
+      <InstallHint />
       <div className="panel">
         <h1 className="glow">TURING THE OTHER CHEEK</h1>
         <p className="tagline">one of you isn't human. find them.</p>
