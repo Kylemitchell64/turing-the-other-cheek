@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { useLobby } from "../game/LobbyContext";
 import MaintenanceBanner from "../components/MaintenanceBanner";
+import InstallHint from "../components/InstallHint";
 import CrewsPanel from "../components/CrewsPanel";
 import MenuWanderer from "../components/MenuWanderer";
 import JoinPanel from "../components/JoinPanel";
@@ -78,6 +79,7 @@ export default function HomePage() {
       </div>
 
       <MaintenanceBanner />
+      <InstallHint />
 
       <div className="home-grid">
       <div className="panel">

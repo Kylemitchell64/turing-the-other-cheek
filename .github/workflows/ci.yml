@@ -65,6 +65,15 @@ jobs:
         run: npm run build
         working-directory: game-client
 
+      # PWA (ADR 0012): the service worker + manifest must ship, and the HTML shell must
+      # NOT be precached, or a deploy would hide behind a stale shell on installed phones.
+      - name: PWA output
+        working-directory: game-client
+        run: |
+          test -f dist/sw.js
+          test -f dist/manifest.webmanifest
+          if grep -q '"index.html"' dist/sw.js; then echo "index.html is precached" && exit 1; fi
+
   docker:
     name: Docker build
     runs-on: ubuntu-latest

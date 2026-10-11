@@ -56,7 +56,8 @@ There's also a **reverse mode**: no hidden impostor — everyone's human, and th
 guessing who wrote which (shuffled, anonymous) answer each round. It's the same style-profile
 tech pointed the other way, so it's gated on having a bit of play history (see the ADRs). The
 whole client is phone-first and got a dedicated mobile visual sweep so nothing breaks on a small
-screen.
+screen. It also installs as an app (Add to Home Screen on iPhone, the install button on Android),
+full screen with its own icon, no app store involved.
 
 ## Tests & CI
 
@@ -227,7 +228,7 @@ dropped at once, an abandoned one after 10 minutes, so memory doesn't grow acros
 The interesting decisions are written up as short ADRs in [`docs/adr/`](docs/adr/) — the
 free-tier-only stack, the Gemini → Groq → Cerebras failover chain, why lobby state lives in
 memory, the JWT/sessionStorage auth choices, how the AI stays anonymous in every payload,
-difficulty as flag records, signed pack share codes, per-user rate limiting, reverse mode, the in-memory fallback that keeps the game playable when the free-tier database is paused, and the solo demo / rejoin design.
+difficulty as flag records, signed pack share codes, per-user rate limiting, reverse mode, the in-memory fallback that keeps the game playable when the free-tier database is paused, the solo demo / rejoin design, and shipping as an installable PWA instead of app-store builds.
 
 The anonymity side has its own [threat model](docs/threat-model.md) — the ways a player could try
 to unmask the AI (frame sniffing, timing, statistical tells, host abuse, cross-rematch replay)
